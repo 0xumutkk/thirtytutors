@@ -21,6 +21,42 @@ Everything else comes from the original project, including memory across session
 
 ---
 
+## See it in action
+
+These videos and screenshots come from the original project. They show its desktop app with the 3D avatars, which this fork's web mode doesn't include, so some screens differ here.
+
+![ThirtyTutors AI tutor conversation demo](thirtytutors/static/images/demo.gif)
+
+### Demo videos
+
+- **0.3.0 release:** [ThirtyTutors UI and UX](https://youtu.be/o4WNlLXm4qo)
+- **0.2.0 release:** [ThirtyTutors quiz system](https://youtu.be/9d4UrbZbwfU)
+- **0.1.0 release:** [ThirtyTutors tutorial](https://youtu.be/0YEskMeH4Gk)
+
+### Screenshots
+
+**Create a new profile**
+
+![Create a new profile](thirtytutors/static/images/home.webp)
+
+**Log in to an existing profile**
+
+![Log in to an existing profile](thirtytutors/static/images/Create_profile.webp)
+
+**Avatar and voice selection**
+
+![Avatar and voice selection](thirtytutors/static/images/Existing_profile.webp)
+
+**Learning session**
+
+![Learning session](thirtytutors/static/images/Pick_Tutor.webp)
+
+**Learning session, full screen**
+
+![Learning session in full screen](thirtytutors/static/images/Session.webp)
+
+---
+
 ## Requirements
 
 - Python 3.11+
