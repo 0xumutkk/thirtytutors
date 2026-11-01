@@ -32,6 +32,11 @@ async def serve_learning_page(request: Request):
     return templates.TemplateResponse(request, "pages/learning.html")
 
 
+@router.get("/login")
+async def serve_login_page(request: Request):
+    return templates.TemplateResponse(request, "pages/login.html")
+
+
 @router.get("/home")
 async def serve_home_page(request: Request):
     return templates.TemplateResponse(request, "pages/home.html")

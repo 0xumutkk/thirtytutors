@@ -5,7 +5,7 @@
 {% block styles %}
 <link rel="stylesheet" href="/UI/styles/sidebar.css?v=1" />
 <link rel="stylesheet" href="/UI/styles/modals.css?v=1" />
-<link rel="stylesheet" href="/UI/styles/avatar_select.css?v=2" />
+<link rel="stylesheet" href="/UI/styles/avatar_select.css?v=3" />
 {% endblock %}
 
 {% block content %}
@@ -24,6 +24,7 @@
         <div id="avatarPreview"></div>
       </div>
       <p id="avatarPreviewHint">Pick a tutor to preview them here.</p>
+      <button id="avatarPreview3dBtn" class="pill-btn" type="button" hidden>Show 3D avatar</button>
       <div id="avatarVoiceMeta"></div>
 
       <div class="tutor-center-field">
@@ -110,5 +111,5 @@
   }
 }
 </script>
-<script type="module" src="/UI/scripts/avatarSelect.js?v=7"></script>
+<script type="module" src="/UI/scripts/avatarSelect.js?v=9"></script>
 {% endblock %}

@@ -74,3 +74,17 @@
   width: 100%;
   margin-top: 6px;
 }
+
+@media (max-width: 640px) {
+  #sessionSwitcherWrap { min-width: 0; }
+  #sessionSwitcherBtn { max-width: 42vw; padding: 0 10px; }
+  /* Relative to the screen: the button sits too far from the edge to anchor it. */
+  #sessionSwitcherDropdown {
+    position: fixed;
+    top: 60px;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-width: none;
+  }
+}

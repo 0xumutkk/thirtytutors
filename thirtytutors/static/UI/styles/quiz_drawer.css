@@ -330,3 +330,11 @@
   opacity: 0.4;
   pointer-events: none;
 }
+
+/* Phones: no room to sit beside the conversation, so it covers it. */
+@media (max-width: 640px) {
+  #quizDrawer.open,
+  #quizDrawer.open.wide { width: 100%; }
+  #body.quiz-drawer-open:not(.avatar-fullscreen) #main,
+  #body.quiz-drawer-open.quiz-drawer-wide:not(.avatar-fullscreen) #main { margin-left: 0; }
+}

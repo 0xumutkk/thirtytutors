@@ -20,8 +20,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>{% block title %}ThirtyTutors{% endblock %}</title>
 <link rel="icon" type="image/x-icon" href="/ThirtyTutors.ico" />
-<link rel="stylesheet" href="/UI/styles/base.css?v=3" />
-  <link rel="stylesheet" href="/UI/styles/topbar.css?v=4" />
+<link rel="stylesheet" href="/UI/styles/base.css?v=4" />
+  <link rel="stylesheet" href="/UI/styles/topbar.css?v=5" />
   <link rel="stylesheet" href="/UI/styles/modals.css?v=3" />
   <link rel="stylesheet" href="/UI/styles/settings.css?v=2" />
 {% block styles %}{% endblock %}
@@ -55,6 +55,7 @@
         <button id="profileMenuBtn" class="settings-avatar-btn" type="button" title="Account menu">Login</button>
         <div id="profileMenuDropdown" class="settings-dropdown">
           <button id="profileMenuSettingsBtn" class="settings-dropdown-item" type="button">⚙️ Settings</button>
+          <button id="profileMenuLogoutBtn" class="settings-dropdown-item" type="button" hidden>Log out</button>
           <button id="profileMenuSwitchBtn" class="settings-dropdown-item" type="button">🔀 Switch profile</button>
         </div>
       </div>
@@ -104,11 +105,11 @@
 <script src="/UI/scripts/theme.js?v=2"></script>
 <script src="/UI/scripts/update.js?v=3"></script>
 <script src="/UI/scripts/micSelection.js?v=1"></script>
-<script src="/UI/scripts/profileMenu.js?v=2"></script>
+<script src="/UI/scripts/profileMenu.js?v=3"></script>
 <script src="/UI/scripts/statsPane.js?v=2"></script>
 <script src="/UI/scripts/languageAutocomplete.js?v=1"></script>
 <script src="/UI/scripts/notes.js?v=1"></script>
-<script src="/UI/scripts/settings.js?v=5"></script>
+<script src="/UI/scripts/settings.js?v=6"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

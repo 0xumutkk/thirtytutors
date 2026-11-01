@@ -52,7 +52,8 @@ function connectWebSocket() {
   // shared `manualClose` boolean - a stale socket that's already been
   // superseded by a newer connection must never act on its own onclose or
   // schedule a competing reconnect.
-  const socket = new WebSocket(`ws://${location.host}/ws/session`);
+  const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+  const socket = new WebSocket(`${scheme}://${location.host}/ws/session`);
   socket.manualClose = false;
   ws = socket;
 

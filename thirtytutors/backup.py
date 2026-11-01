@@ -18,7 +18,7 @@ import shutil
 import zipfile
 from datetime import UTC, datetime
 
-from . import memory
+from . import auth, memory
 from .constants import DATA_DIR
 from .profiles_store import get_profile_by_id, upsert_profile
 from .speech_detection.enrollment import profile_enrollment_dir
@@ -33,6 +33,13 @@ AUTO_BACKUP_DIR = DATA_DIR / "backups" / "auto"
 
 _MANIFEST_NAME = "manifest.json"
 _ENROLLMENT_PREFIX = "voice_enrollment/"
+
+
+def _exportable_profile(profile: dict) -> dict:
+    # A hosted server's backups never carry a user's keys or account link.
+    if not auth.is_hosted():
+        return profile
+    return {k: v for k, v in profile.items() if k not in ("api_key", "langfuse_secret_key", "owner_id")}
 
 
 def build_profile_backup_zip(profile_id: str) -> bytes:
@@ -60,7 +67,7 @@ def build_profile_backup_zip(profile_id: str) -> bytes:
     manifest = {
         "format_version": 1,
         "exported_at": datetime.now(UTC).isoformat(),
-        "profile": {**profile, **memory.get_profile_state(profile_id)},
+        "profile": {**_exportable_profile(profile), **memory.get_profile_state(profile_id)},
         "conversations": memory.export_profile_conversations(profile_id),
     }
 

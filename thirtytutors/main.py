@@ -23,7 +23,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import live_session, memory, quizzes, routes_api, routes_pages, speech_detection
+from . import auth, live_session, memory, quizzes, routes_api, routes_pages, speech_detection
 from .constants import ASSETS_DIR
 from .profiles_store import migrate_legacy_model_name, migrate_legacy_profile_state
 
@@ -72,9 +72,15 @@ async def _warm_up_speaker_models(app: FastAPI):
 
 app = FastAPI(lifespan=_warm_up_speaker_models)
 
+app.middleware("http")(auth.hosted_guard)
+
+app.include_router(auth.router)
 app.include_router(routes_pages.router)
 app.include_router(routes_api.router)
 app.include_router(live_session.router)
+
+
+_HOSTED_CACHEABLE_PREFIXES = ("/avatar/", "/voices/", "/photos/", "/marketing/", "/vendor/")
 
 
 @app.middleware("http")
@@ -90,6 +96,12 @@ async def _disable_static_caching(request: Request, call_next):
     """
     response = await call_next(request)
     path = request.url.path
+    if auth.is_hosted() and path.startswith(_HOSTED_CACHEABLE_PREFIXES) and response.status_code in (200, 206):
+        # None of the above applies to a phone on mobile data, where re-fetching
+        # a 14 MB avatar on every page load is the real cost. These downloaded
+        # assets are versioned as a whole, and private because they need a login.
+        response.headers["Cache-Control"] = "private, max-age=604800"
+        return response
     if not path.startswith("/api/") and path != "/ws/session":
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"

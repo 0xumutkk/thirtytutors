@@ -513,7 +513,11 @@ def _download_and_extract_assets(
             if console:
                 console.print(f"Extracting {filename} ...")
             with zipfile.ZipFile(zip_path) as zf:
-                zf.extractall(dest_dir)
+                for info in zf.infolist():
+                    # Zips built on Windows can carry backslash separators,
+                    # which other platforms would keep as part of the name.
+                    info.filename = info.filename.replace("\\", "/")
+                    zf.extract(info, dest_dir)
 
     marker_path.parent.mkdir(parents=True, exist_ok=True)
     marker_path.write_text(version, encoding="utf-8")

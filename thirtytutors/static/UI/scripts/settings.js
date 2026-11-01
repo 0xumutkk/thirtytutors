@@ -190,7 +190,9 @@ settingsThemeToggle.querySelectorAll('.theme-option').forEach((btn) => {
 // --- Account ---
 
 function populateAccountPane() {
-  settingsApiKeyInput.value = currentProfile.api_key || '';
+  // The server never sends the key back - this field only ever replaces it.
+  settingsApiKeyInput.value = '';
+  settingsApiKeyInput.placeholder = currentProfile.has_api_key ? 'Key saved - paste a new one to replace it' : 'Paste your API key';
   settingsApiKeyInput.type = 'password';
   settingsToggleApiKeyBtn.textContent = '\ud83d\udc41\ufe0f';
   settingsApiKeyStatus.textContent = '';
@@ -222,7 +224,9 @@ settingsSaveApiKeyBtn.addEventListener('click', async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ api_key: value }),
     });
-    currentProfile.api_key = value;
+    currentProfile.has_api_key = true;
+    settingsApiKeyInput.value = '';
+    settingsApiKeyInput.placeholder = 'Key saved - paste a new one to replace it';
     settingsApiKeyStatus.textContent = 'Saved - takes effect on your next connect.';
   } catch (e) {
     settingsApiKeyStatus.textContent = 'Could not save - check your connection.';

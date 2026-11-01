@@ -19,7 +19,7 @@ import numpy as np
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 
-from . import backup, memory, quizzes, scenarios, speech_detection, stats, updater
+from . import auth, backup, memory, quizzes, scenarios, speech_detection, stats, updater
 from .constants import (
     APP_VERSION,
     ASSETS_DIR,
@@ -47,6 +47,7 @@ from .profiles_store import (
     get_profile_by_id,
     load_profiles,
     patch_profile,
+    public_profile,
     save_profiles,
 )
 
@@ -228,6 +229,10 @@ async def get_update_status(force: bool = False):
     "Check for Updates" button, not the silent on-load check every page
     does).
     """
+    if auth.is_hosted():
+        # The server is updated by deploying it, never from a visitor's browser.
+        none = {"update_available": False}
+        return {"app": none, "assets": none, "marketing": none}
     now = time.time()
     cached = _update_status_cache["data"]
     if not force and cached is not None and (now - _update_status_cache["ts"]) < _UPDATE_STATUS_CACHE_SECONDS:
@@ -337,8 +342,11 @@ async def get_release_notes(version: str):
 
 
 @router.get("/api/profiles")
-def list_profiles():
-    return {"profiles": [{"id": p["id"], "name": p["name"]} for p in load_profiles()]}
+def list_profiles(request: Request):
+    profiles = load_profiles()
+    if auth.is_hosted():
+        profiles = [p for p in profiles if auth.user_owns_profile(request.state.user, p)]
+    return {"profiles": [{"id": p["id"], "name": p["name"]} for p in profiles]}
 
 
 @router.post("/api/profiles")
@@ -394,10 +402,12 @@ async def create_profile(request: Request):
         "auto_backup_enabled": False,
         "auto_backup_interval_days": 7,
     }
+    if auth.is_hosted():
+        profile["owner_id"] = request.state.user["id"]
     profiles = load_profiles()
     profiles.append(profile)
     save_profiles(profiles)
-    return profile
+    return public_profile(profile)
 
 
 @router.get("/api/profiles/{profile_id}")
@@ -405,7 +415,7 @@ def get_profile(profile_id: str):
     profile = get_profile_by_id(profile_id)
     if profile is None:
         raise HTTPException(404, "Profile not found")
-    return profile
+    return public_profile(profile)
 
 
 @router.put("/api/profiles/{profile_id}")
@@ -415,7 +425,7 @@ async def update_profile(profile_id: str, request: Request):
     updated = patch_profile(profile_id, fields)
     if updated is None:
         raise HTTPException(404, "Profile not found")
-    return updated
+    return public_profile(updated)
 
 
 @router.delete("/api/profiles/{profile_id}")
@@ -472,7 +482,7 @@ async def import_profile_endpoint(file: UploadFile = File(...)):
     except (KeyError, ValueError, zipfile.BadZipFile) as e:
         raise HTTPException(400, f"Could not read this backup file: {type(e).__name__}: {e}")
     profile = get_profile_by_id(profile_id)
-    return {"imported": True, "profile": profile}
+    return {"imported": True, "profile": public_profile(profile)}
 
 
 @router.post("/api/profiles/{profile_id}/check-auto-backup")
@@ -836,6 +846,11 @@ def export_conversation_notes_docx(profile_id: str, conversation_id: str):
 _REVIEWABLE_QUIZ_RANGES = ("all", "today", "week", "month")
 
 
+def _require_quiz_in_conversation(quiz_id: str, conversation_id: str) -> None:
+    if quizzes.get_quiz_conversation_id(quiz_id) != conversation_id:
+        raise HTTPException(404, "Quiz not found")
+
+
 def _get_owned_conversation(profile_id: str, conversation_id: str) -> dict:
     conv = memory.get_conversation(conversation_id)
     if conv is None or conv["profile_id"] != profile_id:
@@ -870,6 +885,7 @@ async def start_reviewable_quiz_endpoint(profile_id: str, conversation_id: str, 
 @router.post("/api/profiles/{profile_id}/conversations/{conversation_id}/reviewable-quiz/{quiz_id}/answer")
 async def answer_reviewable_quiz_endpoint(profile_id: str, conversation_id: str, quiz_id: str, request: Request):
     _get_owned_conversation(profile_id, conversation_id)
+    _require_quiz_in_conversation(quiz_id, conversation_id)
     payload = await request.json()
     quizzes.record_item_answer(
         quiz_id,
@@ -886,6 +902,7 @@ async def answer_reviewable_quiz_endpoint(profile_id: str, conversation_id: str,
 @router.post("/api/profiles/{profile_id}/conversations/{conversation_id}/reviewable-quiz/{quiz_id}/finish")
 def finish_reviewable_quiz_endpoint(profile_id: str, conversation_id: str, quiz_id: str, status: str = "completed"):
     _get_owned_conversation(profile_id, conversation_id)
+    _require_quiz_in_conversation(quiz_id, conversation_id)
     if status not in ("completed", "skipped"):
         raise HTTPException(400, "status must be 'completed' or 'skipped'.")
     quizzes.finalize_quiz_session(quiz_id, status=status)

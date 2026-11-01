@@ -42,14 +42,52 @@ def _read_profiles_json(path) -> list[dict] | None:
         return None
 
 
+# Encrypted on disk in hosted mode (see auth.py), plaintext everywhere in memory.
+_SECRET_PROFILE_FIELDS = ("api_key", "langfuse_secret_key")
+
+
+def _map_secret_fields(profiles: list[dict], transform) -> list[dict]:
+    from . import auth  # lazy - auth imports this module
+
+    if not auth.is_hosted():
+        return profiles
+    mapped = []
+    for profile in profiles:
+        profile = dict(profile)
+        for field in _SECRET_PROFILE_FIELDS:
+            if profile.get(field):
+                profile[field] = transform(profile[field])
+        mapped.append(profile)
+    return mapped
+
+
+def _decrypted(profiles: list[dict]) -> list[dict]:
+    from . import auth
+
+    return _map_secret_fields(profiles, auth.decrypt_secret)
+
+
+def public_profile(profile: dict) -> dict:
+    """What a browser gets to see of a profile: never the Gemini key, only
+    whether there is one. Hosted mode hides the Langfuse secret as well; the
+    desktop app's Settings still edits that one in place."""
+    from . import auth
+
+    hidden = _SECRET_PROFILE_FIELDS if auth.is_hosted() else ("api_key",)
+    public = {k: v for k, v in profile.items() if k not in hidden and k != "owner_id"}
+    public["has_api_key"] = bool(profile.get("api_key"))
+    return public
+
+
 def load_profiles() -> list[dict]:
     profiles = _read_profiles_json(PROFILES_FILE)
     if profiles is not None:
-        return profiles
+        return _decrypted(profiles)
     if PROFILES_FILE.exists():
         print("[profiles_store] profiles.json is corrupted or unreadable - trying profiles.json.bak")
     backup_profiles = _read_profiles_json(_backup_path())
     if backup_profiles is not None:
+        backup_profiles = _decrypted(backup_profiles)
         print(f"[profiles_store] recovered {len(backup_profiles)} profile(s) from profiles.json.bak")
         return backup_profiles
     return []
@@ -82,7 +120,10 @@ def save_profiles(profiles: list[dict]) -> None:
             print(f"[profiles_store] could not update profiles.json.bak: {type(e).__name__}: {e}")
 
     tmp_path = PROFILES_FILE.with_suffix(".json.tmp")
-    tmp_path.write_text(json.dumps({"profiles": profiles}, indent=2), encoding="utf-8")
+    from . import auth
+
+    on_disk = _map_secret_fields(profiles, auth.encrypt_secret)
+    tmp_path.write_text(json.dumps({"profiles": on_disk}, indent=2), encoding="utf-8")
     os.replace(tmp_path, PROFILES_FILE)
 
 

@@ -348,3 +348,18 @@
   margin-top: 14px;
   width: 100%;
 }
+
+/* --- Phones --- */
+
+@media (max-width: 640px) {
+  #topbar { padding: 0 10px; gap: 8px; }
+  #topbarLeft { gap: 6px; min-width: 0; }
+  #appTitle { gap: 6px; min-width: 0; }
+  #appTitle .app-name-text,
+  #appTitle #sessionStatusText,
+  #appTitle #modelNameText { display: none; }
+  #modelDot { margin-left: 0; }
+  #topbarLeft .icon-btn { padding: 6px 8px; }
+  #topbarRight { gap: 6px; min-width: 0; }
+  #topbarRight .icon-btn { padding: 6px 8px; }
+}

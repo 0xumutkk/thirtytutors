@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script>
+(function () {
+  var saved = null;
+  try { saved = localStorage.getItem('theme'); } catch (e) {}
+  document.documentElement.setAttribute('data-theme', (saved === 'dark' || saved === 'system') ? saved : 'light');
+})();
+</script>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Log in - ThirtyTutors</title>
+<link rel="stylesheet" href="/UI/styles/base.css?v=4" />
+<link rel="stylesheet" href="/UI/styles/login.css?v=1" />
+</head>
+<body>
+<main id="loginCard">
+  <h1>ThirtyTutors</h1>
+  <p id="loginIntro">Log in to continue your lessons.</p>
+  <form id="loginForm">
+    <div id="inviteField" hidden>
+      <label class="field-label" for="inviteInput">Invite code</label>
+      <input id="inviteInput" class="text-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" />
+    </div>
+    <label class="field-label" for="emailInput">Email</label>
+    <input id="emailInput" class="text-input" type="email" autocomplete="email" autocapitalize="off" required />
+    <label class="field-label" for="passwordInput">Password</label>
+    <input id="passwordInput" class="text-input" type="password" autocomplete="current-password" required />
+    <p id="loginError" role="alert" hidden></p>
+    <button id="loginSubmit" class="primary-btn" type="submit">Log in</button>
+  </form>
+  <button id="loginModeBtn" class="link-btn" type="button">I have an invite code</button>
+</main>
+<script src="/UI/scripts/login.js?v=1"></script>
+</body>
+</html>

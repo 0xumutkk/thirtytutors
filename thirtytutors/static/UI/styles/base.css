@@ -89,8 +89,11 @@ html, body {
 
 #app {
   display: grid;
-  grid-template-rows: 56px 1fr;
+  grid-template-rows: 56px minmax(0, 1fr);
+  /* minmax: otherwise the top bar's content width sets the whole page's. */
+  grid-template-columns: minmax(0, 1fr);
   height: 100vh;
+  height: 100dvh; /* phones: excludes the browser's own bars, so nothing hides behind them */
   width: 100%;
 }
 

@@ -315,3 +315,7 @@
   .tutor-center { order: -1; margin-bottom: 24px; }
   #avatarPreviewFrame { max-width: 360px; }
 }
+
+#avatarPreviewFrame[hidden] { display: none; }
+#avatarPreview3dBtn[hidden] { display: none; }
+#avatarPreview3dBtn { display: block; margin: 8px auto 0; }

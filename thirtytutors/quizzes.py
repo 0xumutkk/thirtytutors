@@ -139,6 +139,15 @@ def record_item_answer(
         record_term_review(conversation_id, target_term, is_correct)
 
 
+def get_quiz_conversation_id(quiz_id: str) -> str | None:
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT conversation_id FROM quiz_sessions WHERE id=?", (quiz_id,)).fetchone()
+        return row["conversation_id"] if row else None
+    finally:
+        conn.close()
+
+
 def finalize_quiz_session(quiz_id: str, status: str = "completed") -> None:
     """Moves a quiz session out of 'in_progress' - 'completed' once the
     student reaches the summary screen, or 'skipped' if they abandon a

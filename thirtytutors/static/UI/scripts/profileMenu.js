@@ -85,6 +85,20 @@ profileMenuSwitchBtn.addEventListener('click', () => {
   window.location.href = '/profiles';
 });
 
+// Hosted mode only - the desktop app has no accounts (see auth.py).
+const profileMenuLogoutBtn = document.getElementById('profileMenuLogoutBtn');
+
+profileMenuLogoutBtn.addEventListener('click', async () => {
+  await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+  try { localStorage.removeItem('tutorProfileId'); } catch (e) {}
+  window.location.href = '/login';
+});
+
+fetch('/api/auth/me')
+  .then((res) => res.json())
+  .then((me) => { profileMenuLogoutBtn.hidden = !me.hosted; })
+  .catch(() => {});
+
 async function initProfileMenu() {
   const savedId = localStorage.getItem('tutorProfileId');
   if (!savedId) {

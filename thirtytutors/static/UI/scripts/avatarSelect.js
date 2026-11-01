@@ -12,12 +12,17 @@
 //    creates a new conversation under that profile - no profile fields to
 //    collect, and Back returns to /home rather than /get-started.
 
-import { initAvatarHead, loadAvatarAndPlaySample, playGreeting, playPoseShowcase } from '/UI/scripts/avatarPreview.js';
+// Loaded on demand: three.js plus a ~14 MB model is a lot to make a phone pay
+// for just to pick a tutor, so there the 3D preview only runs when asked for.
+const loadAvatarPreview = () => import('/UI/scripts/avatarPreview.js');
+const lightPreview = window.matchMedia('(max-width: 900px), (pointer: coarse)').matches;
 
 const femaleGrid = document.getElementById('femaleGrid');
 const maleGrid = document.getElementById('maleGrid');
 const avatarPreviewEl = document.getElementById('avatarPreview');
 const avatarPreviewHint = document.getElementById('avatarPreviewHint');
+const avatarPreviewFrame = document.getElementById('avatarPreviewFrame');
+const avatarPreview3dBtn = document.getElementById('avatarPreview3dBtn');
 const avatarVoiceMeta = document.getElementById('avatarVoiceMeta');
 const targetLanguageInput = document.getElementById('targetLanguageInput');
 const scenarioSelect = document.getElementById('scenarioSelect');
@@ -105,8 +110,37 @@ function renderGrid(container, voices) {
   });
 }
 
+let avatarHeadReady = false;
+let voiceSampleAudio = null;
+
+async function startAvatarHead() {
+  const preview = await loadAvatarPreview();
+  await preview.initAvatarHead(avatarPreviewEl);
+  avatarHeadReady = true;
+}
+
+function playVoiceSample(voiceName) {
+  if (voiceSampleAudio) voiceSampleAudio.pause();
+  voiceSampleAudio = new Audio(`/voices/${voiceName}.wav`);
+  voiceSampleAudio.play().catch(() => {}); // a blocked sample shouldn't stop the choice
+}
+
+avatarPreview3dBtn.addEventListener('click', async () => {
+  avatarPreview3dBtn.hidden = true;
+  avatarPreviewFrame.hidden = false;
+  if (voiceSampleAudio) voiceSampleAudio.pause();
+  try {
+    await startAvatarHead();
+    await selectAvatar(selectedVoice, document.querySelector('.tutor-tile.selected'));
+  } catch (e) {
+    avatarPreviewHint.textContent = 'Avatar preview could not start - you can still start your session.';
+    console.error(e);
+  }
+});
+
 async function selectAvatar(voiceName, tileEl) {
   selectedVoice = voiceName;
+  updateNextEnabled(); // the preview below can be slow on a phone - it shouldn't hold up starting
   document.querySelectorAll('.tutor-tile.selected').forEach((t) => t.classList.remove('selected'));
   if (tileEl) tileEl.classList.add('selected');
 
@@ -116,19 +150,26 @@ async function selectAvatar(voiceName, tileEl) {
     ? `<span>Tone: <strong>${voiceInfo.descriptor}</strong></span><span>Pitch: <strong>${voiceInfo.pitch}</strong></span>`
     : '';
 
+  if (lightPreview && !avatarHeadReady) {
+    avatarPreviewHint.textContent = displayName;
+    avatarPreview3dBtn.hidden = false;
+    playVoiceSample(voiceName);
+    return;
+  }
+
   avatarPreviewHint.textContent = `Loading ${displayName}...`;
   try {
-    await loadAvatarAndPlaySample(voiceName, (pct) => {
+    const preview = await loadAvatarPreview();
+    await preview.loadAvatarAndPlaySample(voiceName, (pct) => {
       avatarPreviewHint.textContent = `Loading ${displayName}... ${pct}%`;
     });
     avatarPreviewHint.textContent = displayName;
-    playGreeting();
-    playPoseShowcase(voiceInfo ? voiceInfo.gender : null);
+    preview.playGreeting();
+    preview.playPoseShowcase(voiceInfo ? voiceInfo.gender : null);
   } catch (e) {
     avatarPreviewHint.textContent = 'Could not load this avatar - try another.';
     console.error(e);
   }
-  updateNextEnabled();
 }
 
 targetLanguageInput.addEventListener('input', updateNextEnabled);
@@ -329,8 +370,10 @@ async function init() {
   renderGrid(femaleGrid, voicesData.filter((v) => v.gender === 'Female'));
   renderGrid(maleGrid, voicesData.filter((v) => v.gender === 'Male'));
 
+  avatarPreviewFrame.hidden = lightPreview;
+  if (lightPreview) avatarPreviewHint.textContent = 'Pick a tutor to hear their voice.';
   try {
-    await initAvatarHead(avatarPreviewEl);
+    if (!lightPreview) await startAvatarHead();
   } catch (e) {
     avatarPreviewHint.textContent = 'Avatar preview could not start - you can still pick a tutor.';
     console.error(e);

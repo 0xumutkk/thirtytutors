@@ -50,6 +50,7 @@ dependencies = [
     "rich",
     "markdown",
     "python-multipart",
+    "cryptography",
     "pywin32; sys_platform == 'win32'",
 ]
 

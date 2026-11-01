@@ -115,7 +115,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from google import genai
 from google.genai import types
 
-from . import memory, observability, quizzes, retry, scenarios, speech_detection
+from . import auth, memory, observability, quizzes, retry, scenarios, speech_detection
 from .constants import (
     DEFAULT_DIFFICULTY,
     DEFAULT_MIC_CALIBRATION_KEY,
@@ -830,6 +830,11 @@ def _record_active_day(profile: dict) -> None:
 
 @router.websocket("/ws/session")
 async def ws_session(websocket: WebSocket):
+    hosted = auth.is_hosted()
+    hosted_user = auth.websocket_user(websocket) if hosted else None
+    if hosted and hosted_user is None:
+        await websocket.close(code=4401)
+        return
     await websocket.accept()
 
     try:
@@ -845,6 +850,11 @@ async def ws_session(websocket: WebSocket):
     profile_id = init_msg.get("profile_id")
     profile = get_profile_by_id(profile_id) if profile_id else None
     conv = None
+
+    if hosted and not auth.user_owns_profile(hosted_user, profile):
+        await websocket.send_json({"type": "error", "message": "Profile not found."})
+        await websocket.close(code=4404)
+        return
 
     if profile is not None:
         requested_cid = init_msg.get("conversation_id")

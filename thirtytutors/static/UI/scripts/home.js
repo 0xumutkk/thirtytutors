@@ -198,7 +198,7 @@ function homeRenderProfile(profile) {
     ['Native language', profile.native_language],
     ['Default level', profile.default_difficulty && profile.default_difficulty[0].toUpperCase() + profile.default_difficulty.slice(1)],
     ['Microphone', profile.mic_label || 'Default microphone'],
-    ['Gemini API key', profile.api_key ? 'Added' : 'Not added'],
+    ['Gemini API key', profile.has_api_key ? 'Added' : 'Not added'],
   ];
   homeProfileInfo.innerHTML = '';
   rows.forEach(([label, value]) => {

@@ -1,0 +1,85 @@
+/* Hosted mode's login page - see auth.py. */
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+}
+
+#loginCard {
+  width: min(380px, calc(100vw - 32px));
+  margin: 12vh auto 32px;
+  padding: 28px 24px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel);
+}
+
+#loginCard h1 {
+  margin: 0 0 6px;
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+}
+
+#loginIntro {
+  margin: 0 0 18px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+#loginForm .field-label {
+  display: block;
+  margin: 12px 0 5px;
+}
+
+#loginForm .text-input {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 16px; /* below this, iOS zooms the page on focus */
+}
+
+#loginError {
+  margin: 12px 0 0;
+  color: var(--accent);
+  font-size: 0.85rem;
+}
+
+#loginSubmit {
+  width: 100%;
+  margin-top: 18px;
+}
+
+.link-btn {
+  display: block;
+  margin: 14px auto 0;
+  padding: 6px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* .text-input and .primary-btn are styled per page elsewhere - this page
+   loads only base.css, so it carries its own. */
+#loginForm .text-input {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-raised);
+  color: var(--text);
+}
+
+#loginSubmit {
+  padding: 12px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+#loginSubmit:disabled { opacity: 0.6; }
+
+#loginForm .field-label { color: var(--text-muted); font-size: 0.85rem; }

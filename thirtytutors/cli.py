@@ -284,6 +284,35 @@ def _print_app_update_notice(console) -> None:
         )
 
 
+def cmd_serve(args: argparse.Namespace) -> None:
+    """Hosted mode: no window, only reachable through the HTTPS proxy in front
+    of it (which is why this binds to localhost and trusts only that proxy's
+    forwarded headers). Refuses to start without the secret key rather than
+    finding out on the first profile save."""
+    import os
+
+    import uvicorn
+
+    from . import auth
+
+    os.environ["THIRTYTUTORS_HOSTED"] = "1"
+    auth.encrypt_secret("startup-check")
+    uvicorn.run(
+        "thirtytutors.main:app",
+        host="127.0.0.1",
+        port=args.port,
+        proxy_headers=True,
+        forwarded_allow_ips="127.0.0.1",
+    )
+
+
+def cmd_invite(args: argparse.Namespace) -> None:
+    from . import auth, memory
+
+    memory.init_db()
+    print(auth.create_invite())
+
+
 def cmd_setup(args: argparse.Namespace) -> None:
     run_setup(force=args.force)
 
@@ -346,6 +375,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Re-download assets even if already up to date.",
     )
     p_setup.set_defaults(func=cmd_setup)
+
+    p_serve = sub.add_parser("serve", help="Run as a hosted, multi-user server behind an HTTPS proxy.")
+    p_serve.set_defaults(func=cmd_serve)
+
+    p_invite = sub.add_parser("invite", help="Print a new single-use invite code for a hosted server.")
+    p_invite.set_defaults(func=cmd_invite)
 
     return parser
 
