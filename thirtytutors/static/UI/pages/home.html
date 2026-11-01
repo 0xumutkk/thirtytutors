@@ -28,6 +28,12 @@
 
     <p id="homeStatus" role="alert" hidden></p>
 
+    <section id="homeInstallCard" aria-label="Install the app" hidden>
+      <p id="homeInstallText">Install ThirtyTutors to open your lessons like an app.</p>
+      <button id="homeInstallBtn" class="primary-btn" type="button" hidden>Install</button>
+      <button id="homeInstallDismissBtn" class="icon-btn" type="button" aria-label="Dismiss">&times;</button>
+    </section>
+
     <section id="homeStats" aria-label="Your progress">
       <div class="home-stat"><span id="homeStreakValue" class="home-stat-value">-</span><span class="home-stat-label">Day streak</span></div>
       <div class="home-stat"><span id="homeHoursValue" class="home-stat-value">-</span><span class="home-stat-label">Hours studied</span></div>
@@ -63,5 +69,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="/UI/scripts/home.js?v=2"></script>
+<script src="/UI/scripts/home.js?v=3"></script>
 {% endblock %}

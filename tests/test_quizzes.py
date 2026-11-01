@@ -5,6 +5,8 @@ conftest.py's isolated_data_dir), not a mock - this module's whole job IS
 the SQL, so exercising it for real is the point.
 """
 
+import time
+
 import pytest
 
 from thirtytutors import memory, quizzes
@@ -228,3 +230,52 @@ def test_delete_conversation_removes_quiz_rows():
 
     assert quizzes.get_quiz_sessions(conv["id"]) == []
     assert quizzes.get_quiz_items(quiz_id) == []
+
+
+# --- Saved words in Test Yourself ---
+
+
+def _saved(term, context=None, meaning=None, created_ts=None):
+    return {"term": term, "context": context, "meaning": meaning, "created_ts": created_ts or int(time.time())}
+
+
+def test_saved_word_in_its_sentence_becomes_a_fill_in_the_blank():
+    words = [_saved("reluctant", "She was reluctant to go."), _saved("earn money")]
+    item = next(i for i in quizzes.build_saved_word_items(words, [], set()) if i["target_term"] == "reluctant")
+    assert item["item_type"] == "fill_blank_dragdrop"
+    assert item["text_with_blanks"] == "She was {0} to go."
+    assert item["correct_answers"] == ["reluctant"]
+    assert set(item["word_bank"]) == {"reluctant", "earn money"}
+
+
+def test_saved_word_without_its_sentence_is_asked_by_meaning():
+    words = [_saved("reluctant", "Nothing relevant.", "isteksiz"), _saved("earn"), _saved("gain")]
+    item = next(i for i in quizzes.build_saved_word_items(words, [], set()) if i["target_term"] == "reluctant")
+    assert item["item_type"] == "multiple_choice"
+    assert item["question"] == "isteksiz"
+    assert item["choices"][item["correct_choice_index"]] == "reluctant"
+
+
+def test_a_single_saved_word_has_nothing_to_mix_with_until_other_vocab_exists():
+    words = [_saved("reluctant", "She was reluctant to go.")]
+    assert quizzes.build_saved_word_items(words, [], set()) == []
+    assert len(quizzes.build_saved_word_items(words, ["earn money"], set())) == 1
+
+
+def test_saved_word_only_matches_whole_words_and_skips_already_covered_terms():
+    words = [_saved("art", "The party started."), _saved("earn")]
+    assert all(i["target_term"] != "art" for i in quizzes.build_saved_word_items(words, ["x", "y"], set()))
+    words = [_saved("earn", "I earn money."), _saved("gain")]
+    assert all(i["target_term"] != "earn" for i in quizzes.build_saved_word_items(words, [], {"earn"}))
+
+
+def test_saved_word_outside_the_date_range_is_left_out():
+    old = int(time.time()) - 60 * 86400
+    words = [_saved("earn", "I earn money.", created_ts=old), _saved("gain")]
+    assert all(i["target_term"] != "earn" for i in quizzes.build_saved_word_items(words, [], set(), "week"))
+
+
+def test_braces_in_a_sentence_dont_become_extra_blanks():
+    words = [_saved("earn", "I {really} earn money."), _saved("gain")]
+    item = next(i for i in quizzes.build_saved_word_items(words, [], set()) if i["target_term"] == "earn")
+    assert item["text_with_blanks"].count("{") == 1

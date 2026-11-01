@@ -433,3 +433,162 @@ def test_tutor_has_no_mood_tool_or_rules():
     assert "set_mood" not in text
     assert "Quiz on real mistakes" in text
     assert "trouble spot" in text
+
+
+# --- Saved words ---
+
+
+def test_saved_words_api_round_trip():
+    a = _signed_up()
+    url = f"/api/profiles/{_profile_of(a)['id']}/saved-words"
+    saved = a.post(url, json={"term": " earn money ", "context": "You earn money."}).json()
+    assert saved["term"] == "earn money"
+    assert [w["term"] for w in a.get(url).json()["words"]] == ["earn money"]
+    assert a.delete(f"{url}/{saved['id']}").status_code == 200
+    assert a.get(url).json()["words"] == []
+
+
+@pytest.mark.parametrize("term", ["", "   ", "x" * 121])
+def test_saved_word_must_be_a_short_phrase(term):
+    a = _signed_up()
+    assert a.post(f"/api/profiles/{_profile_of(a)['id']}/saved-words", json={"term": term}).status_code == 400
+
+
+def test_other_users_saved_words_are_unreachable():
+    a, b = _signed_up("a@example.com"), _signed_up("b@example.com")
+    url = f"/api/profiles/{_profile_of(a)['id']}/saved-words"
+    saved = a.post(url, json={"term": "earn money"}).json()
+    assert b.get(url).status_code == 404
+    assert b.post(url, json={"term": "x"}).status_code == 404
+    assert b.delete(f"{url}/{saved['id']}").status_code == 404
+
+
+def test_saved_word_ignores_a_conversation_of_someone_else():
+    a, b = _signed_up("a@example.com"), _signed_up("b@example.com")
+    a_profile = _profile_of(a)
+    conv = a.post(f"/api/profiles/{a_profile['id']}/conversations", json={"target_language": "English"}).json()
+    saved = b.post(f"/api/profiles/{_profile_of(b)['id']}/saved-words", json={"term": "x", "conversation_id": conv["id"]}).json()
+    assert saved["conversation_id"] is None
+
+
+# --- Word meanings ---
+
+
+def _conversation(client, profile, **config):
+    return client.post(f"/api/profiles/{profile['id']}/conversations", json={"target_language": "English", **config}).json()
+
+
+def _capture_explain(monkeypatch):
+    from thirtytutors import word_help
+
+    calls = {}
+
+    def fake(api_key, term, context, language):
+        calls.update(api_key=api_key, term=term, context=context, language=language)
+        return "a short meaning"
+
+    monkeypatch.setattr(word_help, "explain_word", fake)
+    return calls
+
+
+def test_meaning_uses_native_language_by_default(monkeypatch):
+    calls = _capture_explain(monkeypatch)
+    a = _signed_up()
+    profile = _profile_of(a)
+    conv = _conversation(a, profile, native_language="Turkish")
+    res = a.post(
+        f"/api/profiles/{profile['id']}/word-meaning", json={"term": "reluctant", "context": "s", "conversation_id": conv["id"]}
+    )
+    assert res.json() == {"meaning": "a short meaning"}
+    assert calls["language"] == "Turkish"
+    assert calls["api_key"] == "AIza-secret-key"
+
+
+def test_meaning_stays_in_the_learned_language_for_target_only_lessons(monkeypatch):
+    calls = _capture_explain(monkeypatch)
+    a = _signed_up()
+    profile = _profile_of(a)
+    conv = _conversation(a, profile, native_language="Turkish", explanation_mode="target_only")
+    a.post(f"/api/profiles/{profile['id']}/word-meaning", json={"term": "reluctant", "conversation_id": conv["id"]})
+    assert calls["language"] == "English"
+
+
+def test_meaning_refuses_someone_elses_conversation(monkeypatch):
+    calls = _capture_explain(monkeypatch)
+    a, b = _signed_up("a@example.com"), _signed_up("b@example.com")
+    conv = _conversation(a, _profile_of(a))
+    res = b.post(f"/api/profiles/{_profile_of(b)['id']}/word-meaning", json={"term": "x", "conversation_id": conv["id"]})
+    assert res.status_code == 404
+    assert calls == {}
+
+
+def test_review_quiz_includes_saved_words():
+    a = _signed_up()
+    profile = _profile_of(a)
+    conv = _conversation(a, profile)
+    url = f"/api/profiles/{profile['id']}/saved-words"
+    a.post(url, json={"term": "reluctant", "context": "She was reluctant to go.", "meaning": "unwilling"})
+    a.post(url, json={"term": "earn money"})
+    assert a.get(url).json()["words"][1]["meaning"] == "unwilling"
+    items = a.get(f"/api/profiles/{profile['id']}/conversations/{conv['id']}/reviewable-quiz").json()["items"]
+    assert "reluctant" in [i["target_term"] for i in items]
+
+
+# --- Reading aloud in the tutor's voice ---
+
+
+def _capture_speech(monkeypatch):
+    from thirtytutors import word_help
+
+    calls = {}
+
+    def fake(api_key, text, voice_name):
+        calls.update(api_key=api_key, text=text, voice=voice_name)
+        return "QUJD"
+
+    monkeypatch.setattr(word_help, "speak_text", fake)
+    return calls
+
+
+def test_speech_uses_the_conversations_tutor_voice(monkeypatch):
+    calls = _capture_speech(monkeypatch)
+    a = _signed_up()
+    profile = _profile_of(a)
+    conv = _conversation(a, profile, voice_name="Puck")
+    res = a.post(f"/api/profiles/{profile['id']}/conversations/{conv['id']}/speak", json={"text": "Hello there"})
+    assert res.json() == {"audio": "QUJD"}
+    assert calls == {"api_key": "AIza-secret-key", "text": "Hello there", "voice": "Puck"}
+
+
+@pytest.mark.parametrize("text", ["", "x" * 2001])
+def test_speech_rejects_empty_or_oversized_text(monkeypatch, text):
+    calls = _capture_speech(monkeypatch)
+    a = _signed_up()
+    profile = _profile_of(a)
+    conv = _conversation(a, profile)
+    assert a.post(f"/api/profiles/{profile['id']}/conversations/{conv['id']}/speak", json={"text": text}).status_code == 400
+    assert calls == {}
+
+
+def test_speech_refuses_someone_elses_conversation(monkeypatch):
+    calls = _capture_speech(monkeypatch)
+    a, b = _signed_up("a@example.com"), _signed_up("b@example.com")
+    profile = _profile_of(a)
+    conv = _conversation(a, profile)
+    assert b.post(f"/api/profiles/{profile['id']}/conversations/{conv['id']}/speak", json={"text": "x"}).status_code == 404
+    assert b.post(f"/api/profiles/{_profile_of(b)['id']}/conversations/{conv['id']}/speak", json={"text": "x"}).status_code == 404
+    assert calls == {}
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["/manifest.webmanifest", "/sw.js", "/offline.html", "/UI/icons/icon-192.png", "/UI/icons/icon-512.png"],
+)
+def test_installable_app_files_are_public(path):
+    assert _client().get(path).status_code == 200
+
+
+def test_pages_link_the_manifest_in_hosted_mode_only(monkeypatch):
+    assert 'rel="manifest"' in _client().get("/login").text
+    monkeypatch.delenv("THIRTYTUTORS_HOSTED")
+    assert 'rel="manifest"' not in _client().get("/login").text

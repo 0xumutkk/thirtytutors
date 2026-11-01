@@ -240,10 +240,23 @@ async function homeLoadData(profile) {
   }
 }
 
+// The marketing page is only for someone with nothing to pick yet: a hosted
+// account is already logged in, and existing profiles only need choosing.
+async function homeLeaveWithoutProfile() {
+  let target = '/landing';
+  try {
+    const [me, list] = await Promise.all([homeFetchJson('/api/auth/me'), homeFetchJson('/api/profiles')]);
+    if (me.hosted || list.profiles.length > 0) target = '/profiles';
+  } catch (e) {
+    console.error(e);
+  }
+  window.location.replace(target);
+}
+
 async function initHome() {
   const savedId = localStorage.getItem('tutorProfileId');
   if (!savedId) {
-    window.location.replace('/landing');
+    homeLeaveWithoutProfile();
     return;
   }
 
@@ -255,7 +268,7 @@ async function initHome() {
     // which may not finish first - /landing bounces back here while the id
     // is still set.
     localStorage.removeItem('tutorProfileId');
-    window.location.replace('/landing');
+    homeLeaveWithoutProfile();
     return;
   }
 

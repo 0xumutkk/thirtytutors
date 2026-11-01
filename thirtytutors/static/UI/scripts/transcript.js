@@ -92,20 +92,43 @@ function showSessionStatus(resumed) {
 
 // --- Transcript ---
 
+// Recorded tutor audio per bubble, for replay. Only the latest replies are
+// kept: about 48 KB per second of speech adds up over a long lesson.
+const bubbleAudio = new Map();
+const MAX_BUBBLES_WITH_AUDIO = 20;
+
+function createBubble(who, text) {
+  const bubble = document.createElement('div');
+  bubble.className = `bubble ${who === 'mine' ? 'mine' : 'tutor'}`;
+  const label = document.createElement('span');
+  label.className = 'speaker-label';
+  label.textContent = who === 'mine' ? (currentProfile ? currentProfile.name : 'You') : (currentVoiceAlias || 'Tutor');
+  const body = document.createElement('span');
+  body.className = 'bubble-text';
+  body.textContent = text;
+  if (who !== 'mine') {
+    const replay = document.createElement('button');
+    replay.type = 'button';
+    replay.className = 'bubble-replay';
+    replay.title = 'Hear this again';
+    replay.setAttribute('aria-label', 'Hear this again');
+    replay.textContent = '\u{1F50A}';
+    replay.addEventListener('click', () => replayBubble(bubbleAudio.get(bubble), body.textContent));
+    label.appendChild(replay);
+  }
+  bubble.appendChild(label);
+  bubble.appendChild(body);
+  return { bubble, body };
+}
+
 function appendOrCreateBubble(who, textChunk) {
   if (activeBubbles[who]) {
     activeBubbles[who].textSpan.textContent += textChunk;
   } else {
-    if (emptyState.isConnected) emptyState.remove();
-    const bubble = document.createElement('div');
-    bubble.className = `bubble ${who === 'mine' ? 'mine' : 'tutor'}`;
-    const label = document.createElement('span');
-    label.className = 'speaker-label';
-    label.textContent = who === 'mine' ? (currentProfile ? currentProfile.name : 'You') : (currentVoiceAlias || 'Tutor');
-    const body = document.createElement('span');
-    body.textContent = textChunk;
-    bubble.appendChild(label);
-    bubble.appendChild(body);
+    // Looked up by id: renderConversationTranscript can replace the original element.
+    const emptyStateEl = document.getElementById('emptyState');
+    if (emptyStateEl) emptyStateEl.remove();
+    const { bubble, body } = createBubble(who, textChunk);
     // The student's transcription can arrive after the tutor has started
     // replying - it still belongs before that reply.
     const tutorReply = who === 'mine' ? activeBubbles.tutor : null;
@@ -115,22 +138,19 @@ function appendOrCreateBubble(who, textChunk) {
   transcriptArea.scrollTop = transcriptArea.scrollHeight;
 }
 
+function attachTurnAudioToReply(chunks) {
+  if (!activeBubbles.tutor || !chunks.length) return;
+  bubbleAudio.set(activeBubbles.tutor.el, chunks);
+  if (bubbleAudio.size > MAX_BUBBLES_WITH_AUDIO) bubbleAudio.delete(bubbleAudio.keys().next().value);
+}
+
 function finalizeTurnBubbles() {
   activeBubbles.mine = null;
   activeBubbles.tutor = null;
 }
 
 function renderHistoryBubble(who, text) {
-  const bubble = document.createElement('div');
-  bubble.className = `bubble ${who === 'mine' ? 'mine' : 'tutor'}`;
-  const label = document.createElement('span');
-  label.className = 'speaker-label';
-  label.textContent = who === 'mine' ? (currentProfile ? currentProfile.name : 'You') : (currentVoiceAlias || 'Tutor');
-  const body = document.createElement('span');
-  body.textContent = text;
-  bubble.appendChild(label);
-  bubble.appendChild(body);
-  transcriptArea.appendChild(bubble);
+  transcriptArea.appendChild(createBubble(who, text).bubble);
 }
 
 function renderConversationTranscript(turns) {

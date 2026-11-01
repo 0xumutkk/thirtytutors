@@ -124,6 +124,17 @@ def init_db() -> None:
               summary TEXT
             );
 
+            CREATE TABLE IF NOT EXISTS saved_words (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              profile_id TEXT NOT NULL,
+              term TEXT NOT NULL COLLATE NOCASE,
+              context TEXT,
+              meaning TEXT,
+              conversation_id TEXT,
+              created_ts INTEGER NOT NULL,
+              UNIQUE (profile_id, term)
+            );
+
             CREATE TABLE IF NOT EXISTS users (
               id TEXT PRIMARY KEY,
               email TEXT NOT NULL UNIQUE,
@@ -174,6 +185,11 @@ def init_db() -> None:
             except sqlite3.OperationalError as e:
                 if "duplicate column" not in str(e).lower():
                     raise
+        try:
+            conn.execute("ALTER TABLE saved_words ADD COLUMN meaning TEXT")
+        except sqlite3.OperationalError as e:
+            if "duplicate column" not in str(e).lower():
+                raise
         conn.commit()
     finally:
         conn.close()
@@ -364,6 +380,7 @@ def delete_profile_state(profile_id: str) -> None:
     conn = _connect()
     try:
         conn.execute("DELETE FROM profile_state WHERE profile_id=?", (profile_id,))
+        conn.execute("DELETE FROM saved_words WHERE profile_id=?", (profile_id,))
         conn.commit()
     finally:
         conn.close()
@@ -703,6 +720,57 @@ def record_term_review(conversation_id: str, term: str, correct: bool) -> None:
                 (conversation_id, term, "missed in quiz", ts, ts),
             )
         conn.commit()
+    finally:
+        conn.close()
+
+
+def add_saved_word(
+    profile_id: str, term: str, context: str | None = None, conversation_id: str | None = None, meaning: str | None = None
+) -> dict:
+    """Saves a word the student picked out of the dialogue. Saving one again
+    is harmless - the first save, with its original sentence, stands, and
+    only fills in a meaning that was missing."""
+    term = term.strip()
+    conn = _connect()
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO saved_words (profile_id, term, context, meaning, conversation_id, created_ts) "
+            "VALUES (?,?,?,?,?,?)",
+            (profile_id, term, context, meaning, conversation_id, int(time.time())),
+        )
+        conn.execute(
+            "UPDATE saved_words SET meaning=COALESCE(meaning, ?) WHERE profile_id=? AND term=?",
+            (meaning, profile_id, term),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT id, term, context, meaning, conversation_id, created_ts FROM saved_words WHERE profile_id=? AND term=?",
+            (profile_id, term),
+        ).fetchone()
+        return dict(row)
+    finally:
+        conn.close()
+
+
+def get_saved_words(profile_id: str, limit: int = 1000) -> list[dict]:
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            "SELECT id, term, context, meaning, conversation_id, created_ts FROM saved_words "
+            "WHERE profile_id=? ORDER BY created_ts DESC, id DESC LIMIT ?",
+            (profile_id, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def delete_saved_word(profile_id: str, word_id: int) -> bool:
+    conn = _connect()
+    try:
+        cur = conn.execute("DELETE FROM saved_words WHERE profile_id=? AND id=?", (profile_id, word_id))
+        conn.commit()
+        return cur.rowcount > 0
     finally:
         conn.close()
 

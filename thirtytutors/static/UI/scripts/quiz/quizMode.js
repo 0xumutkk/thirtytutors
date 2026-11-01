@@ -100,7 +100,7 @@ function renderIntro(items) {
     quizModeEmptyStateEl.style.display = '';
     quizModeReadyStateEl.style.display = 'none';
     quizModeEmptyMessageEl.textContent =
-      "You haven't completed any quizzes in this conversation yet. Practice with the tutor first, then come back to test yourself.";
+      "Nothing to review yet. Finish a quiz with your tutor, or save a few words from the dialogue - saved words need other words to mix with.";
     return;
   }
 

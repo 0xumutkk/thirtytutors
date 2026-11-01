@@ -24,6 +24,7 @@
 let currentProfile = null;
 let conversationsCache = [];
 let currentConversationId = null;
+let currentConversationLanguage = '';
 
 async function fetchProfile(id) {
   const res = await fetch(`/api/profiles/${id}`);
@@ -36,10 +37,19 @@ const profileMenuDropdown = document.getElementById('profileMenuDropdown');
 const profileMenuSettingsBtn = document.getElementById('profileMenuSettingsBtn');
 const profileMenuSwitchBtn = document.getElementById('profileMenuSwitchBtn');
 
+// Set in hosted mode once /api/auth/me answers: the account is already logged
+// in there even before a profile is picked, so the button is never "Login".
+let accountEmail = null;
+
 function refreshProfileMenuButton() {
-  if (currentProfile) {
-    profileMenuBtn.textContent = (currentProfile.name[0] || '?').toUpperCase();
-    profileMenuBtn.title = currentProfile.name;
+  profileMenuSettingsBtn.hidden = !currentProfile;
+  // Login would only link to /profiles, which is where this page already is.
+  const loginIsPointless = !currentProfile && !accountEmail && window.location.pathname === '/profiles';
+  profileMenuBtn.style.visibility = loginIsPointless ? 'hidden' : '';
+  if (currentProfile || accountEmail) {
+    const name = currentProfile ? currentProfile.name : accountEmail;
+    profileMenuBtn.textContent = (name[0] || '?').toUpperCase();
+    profileMenuBtn.title = name;
     profileMenuBtn.classList.remove('profile-menu-btn-login');
   } else {
     profileMenuBtn.textContent = 'Login';
@@ -54,7 +64,7 @@ function closeProfileMenuDropdown() {
 
 profileMenuBtn.addEventListener('click', (e) => {
   e.stopPropagation();
-  if (!currentProfile) {
+  if (!currentProfile && !accountEmail) {
     // No profile logged in - this is a plain link, not a dropdown (there's
     // nothing to open Settings onto without a profile). /profiles is where
     // an existing profile is picked or a new one is started (via its own
@@ -94,12 +104,18 @@ profileMenuLogoutBtn.addEventListener('click', async () => {
   window.location.href = '/login';
 });
 
-fetch('/api/auth/me')
-  .then((res) => res.json())
-  .then((me) => { profileMenuLogoutBtn.hidden = !me.hosted; })
-  .catch(() => {});
+async function fetchAccount() {
+  try {
+    const me = await (await fetch('/api/auth/me')).json();
+    profileMenuLogoutBtn.hidden = !me.hosted;
+    accountEmail = me.email;
+  } catch (e) {
+    // Left as the desktop app's no-account state.
+  }
+}
 
 async function initProfileMenu() {
+  await fetchAccount();
   const savedId = localStorage.getItem('tutorProfileId');
   if (!savedId) {
     refreshProfileMenuButton();

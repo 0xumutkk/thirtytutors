@@ -759,6 +759,9 @@ def _connect_failure_payload(exc: Exception, fallback_message: str) -> dict:
     return {"type": "error", "message": fallback_message}
 
 
+SAVED_WORDS_IN_CONTEXT = 20
+
+
 def _refresh_conversation_memory_context(conv: dict, config_identity: dict) -> tuple:
     """Re-fetches everything storage-backed that a (re)connect needs: the
     conversation row itself, plus the rolling summary/taught vocab/trouble
@@ -801,7 +804,14 @@ def _refresh_conversation_memory_context(conv: dict, config_identity: dict) -> t
     )
     summary_row = memory.get_summary(conv["id"])
     summary_text = summary_row["summary"] if summary_row else None
+    # Words the student saved count as trouble spots, so lessons and quizzes
+    # bring them back. Like the rest of this context, only a fresh Gemini
+    # session reads it, not one resumed through a handle.
     review_terms = memory.get_review_candidates(conv["id"])
+    known = {term.lower() for term in review_terms}
+    for word in memory.get_saved_words(conv["profile_id"], limit=SAVED_WORDS_IN_CONTEXT):
+        if word["term"].lower() not in known:
+            review_terms.append(word["term"])
     taught_vocab = memory.get_taught_vocab(conv["id"])
     return conv, resumption_handle, summary_text, review_terms, taught_vocab
 
@@ -931,7 +941,7 @@ async def ws_session(websocket: WebSocket):
             await websocket.send_json(
                 {
                     "type": "error",
-                    "message": f"{e} Add one for this profile on the landing page (or /profiles) and try again.",
+                    "message": f"{e} Add one in Settings, then try again.",
                 }
             )
         except Exception as exc:  # noqa: BLE001
@@ -1380,6 +1390,7 @@ async def ws_session(websocket: WebSocket):
                             # becomes worth investigating further.
                             if sc and getattr(sc, "interrupted", False):
                                 print("[ws_session] server_content.interrupted=True (no client action - see comment)")
+                                await websocket.send_json({"type": "interrupted"})
 
                             if getattr(response, "data", None):
                                 await websocket.send_json(

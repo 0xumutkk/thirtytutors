@@ -68,6 +68,7 @@ def build_profile_backup_zip(profile_id: str) -> bytes:
         "format_version": 1,
         "exported_at": datetime.now(UTC).isoformat(),
         "profile": {**_exportable_profile(profile), **memory.get_profile_state(profile_id)},
+        "saved_words": memory.get_saved_words(profile_id),
         "conversations": memory.export_profile_conversations(profile_id),
     }
 
@@ -123,6 +124,8 @@ def import_profile_backup_zip(zip_bytes: bytes) -> str:
 
         upsert_profile(profile)
         memory.set_profile_state(profile_id, state)
+        for word in manifest.get("saved_words", []):
+            memory.add_saved_word(profile_id, word["term"], word.get("context"), word.get("conversation_id"), word.get("meaning"))
         memory.import_profile_conversations(profile_id, manifest.get("conversations", []))
 
         enrollment_names = [n for n in zf.namelist() if n.startswith(_ENROLLMENT_PREFIX) and not n.endswith("/")]

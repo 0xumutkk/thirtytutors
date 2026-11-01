@@ -467,3 +467,29 @@ def test_record_mistake_ignores_empty_correction(make_profile, make_conversation
     conv = make_conversation(make_profile(target_language="English")["id"], target_language="English")
     memory.record_mistake(conv["id"], "gain money", "   ", "collocation")
     assert memory.get_vocab_mistakes(conv["id"]) == []
+
+
+# --- Saved words ---
+
+
+def test_saved_words_are_per_profile_and_not_duplicated():
+    first = memory.add_saved_word("p1", "earn money", "You earn money at work.")
+    again = memory.add_saved_word("p1", "Earn Money", "Another sentence.")
+    memory.add_saved_word("p2", "earn money")
+    assert again["id"] == first["id"]
+    assert again["context"] == "You earn money at work."
+    assert [w["term"] for w in memory.get_saved_words("p1")] == ["earn money"]
+    assert len(memory.get_saved_words("p2")) == 1
+
+
+def test_saved_word_is_only_deleted_by_its_profile():
+    word = memory.add_saved_word("p1", "earn money")
+    assert memory.delete_saved_word("p2", word["id"]) is False
+    assert memory.delete_saved_word("p1", word["id"]) is True
+    assert memory.get_saved_words("p1") == []
+
+
+def test_deleting_profile_state_removes_saved_words():
+    memory.add_saved_word("p1", "earn money")
+    memory.delete_profile_state("p1")
+    assert memory.get_saved_words("p1") == []

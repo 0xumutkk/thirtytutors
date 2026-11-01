@@ -32,10 +32,10 @@ async function init() {
       localStorage.removeItem('tutorProfileId');
     }
   }
-  // No active profile (first run, or a stale/deleted one) - /landing is
-  // the app's universal entry point (see desktop.py), so bounce there
-  // rather than assuming this page should render without one.
-  window.location.href = '/landing';
+  // No active profile (first run, or a stale/deleted one) - /home decides
+  // where that belongs (see home.js), rather than assuming this page should
+  // render without one.
+  window.location.href = '/home';
 }
 
 init();

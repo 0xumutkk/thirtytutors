@@ -34,6 +34,9 @@ DEFAULT_TARGET_LANGUAGE = "Polish"
 # for this task.
 SUMMARY_MODEL = "gemini-3.1-flash-lite"
 
+# Reads dialogue aloud in the tutor's voice when there's no recording of it.
+SPEECH_MODEL = "gemini-3.8-flash-lite-tts"
+
 # Official voice names + descriptors are from Google's docs
 # (ai.google.dev/gemini-api/docs/speech-generation), which label voices by
 # tone/character. Gender is not an official Google label - this mapping is

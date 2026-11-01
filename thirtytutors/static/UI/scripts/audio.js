@@ -130,6 +130,65 @@ function base64ToInt16(b64) {
 // scheduled audio buffers.
 const EDGE_FADE_S = 0.002;
 
+// Scheduled but not yet finished, so Stop can cut them off.
+let activeTutorSources = new Set();
+// After Stop, the rest of that reply keeps arriving until the turn ends.
+let tutorAudioMuted = false;
+// This reply's audio, kept for replay (see transcript.js).
+let currentTurnAudio = [];
+let replayingBubble = false;
+let tutorTurnOpen = false; // audio of this reply may still arrive
+
+function receiveTutorAudio(b64data) {
+  tutorTurnOpen = true;
+  if (tutorAudioMuted) return;
+  currentTurnAudio.push(b64data);
+  playAudioChunk(b64data);
+}
+
+function takeCurrentTurnAudio() {
+  const chunks = currentTurnAudio;
+  currentTurnAudio = [];
+  return chunks;
+}
+
+function endTutorTurnAudio() {
+  tutorAudioMuted = false;
+  tutorTurnOpen = false;
+}
+
+function stopTutorSpeech() {
+  // A stop during live speech leaves a partial recording, so that reply is
+  // read aloud afresh when replayed (see replayBubble).
+  if (!replayingBubble && tutorTurnOpen) {
+    currentTurnAudio = [];
+    tutorAudioMuted = true;
+  }
+  replayingBubble = false;
+  activeTutorSources.forEach((source) => {
+    try {
+      source.stop();
+    } catch (e) {
+      /* already finished */
+    }
+  });
+  activeTutorSources.clear();
+  resetPlaybackClock();
+}
+
+function playReplayChunks(chunks) {
+  ensurePlaybackContext();
+  if (playbackContext && playbackContext.state === 'suspended') playbackContext.resume();
+  replayingBubble = true;
+  chunks.forEach(playAudioChunk);
+}
+
+function replayBubble(chunks, text) {
+  if (isRecording || isTutorSpeaking()) return;
+  if (chunks && chunks.length) playReplayChunks(chunks);
+  else speakText(text);
+}
+
 function playAudioChunk(b64data) {
   ensurePlaybackContext();
   const ctx = avatarAudioSink ? avatarAudioSink.audioCtx : playbackContext;
@@ -164,6 +223,11 @@ function playAudioChunk(b64data) {
   gainNode.gain.setValueAtTime(1, startAt + buffer.duration - fadeS);
   gainNode.gain.linearRampToValueAtTime(0, startAt + buffer.duration);
 
+  activeTutorSources.add(source);
+  source.onended = () => {
+    activeTutorSources.delete(source);
+    if (activeTutorSources.size === 0) replayingBubble = false;
+  };
   source.start(startAt);
   nextPlaybackTime = startAt + buffer.duration;
 }
@@ -557,8 +621,12 @@ function resizeCanvas() {
 }
 window.addEventListener('resize', resizeCanvas);
 
+const stopTutorBtn = document.getElementById('stopTutorBtn');
+stopTutorBtn.addEventListener('click', stopTutorSpeech);
+
 function drawWaveform() {
   requestAnimationFrame(drawWaveform);
+  stopTutorBtn.classList.toggle('visible', isTutorSpeaking());
   const rect = waveformCanvas.getBoundingClientRect();
   const w = rect.width, h = rect.height;
   waveformCtx.clearRect(0, 0, w, h);

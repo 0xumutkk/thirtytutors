@@ -1316,3 +1316,37 @@ def test_handsfree_forwards_speech_and_closes_turn_on_silence_without_any_setup(
 
     sent_keys = [next(iter(kwargs)) for kwargs in fake_session.sent_realtime_inputs]
     assert sent_keys == ["activity_start", "audio", "activity_end"]
+
+
+def test_saved_words_join_the_review_terms(make_profile, make_conversation):
+    profile = make_profile(api_key="fake-key")
+    conv = make_conversation(profile["id"], target_language="English")
+    memory.record_term_review(conv["id"], "earn money", correct=False)
+    memory.add_saved_word(profile["id"], "Earn Money")
+    memory.add_saved_word(profile["id"], "reluctant")
+    _, _, _, review_terms, _ = live_session._refresh_conversation_memory_context(conv, conv["config"])
+    assert sorted(review_terms) == ["earn money", "reluctant"]
+
+
+def test_interrupted_is_forwarded_so_a_stopped_reply_can_unmute(ws_app, make_profile, make_conversation):
+    profile = make_profile(api_key="fake-key")
+    conv = make_conversation(profile["id"], target_language="English")
+    fake_session = FakeLiveSession(
+        responses=[
+            _response(
+                server_content=SimpleNamespace(
+                    interrupted=True, input_transcription=None, output_transcription=None, turn_complete=False
+                )
+            ),
+            _response(server_content=_server_content(turn_complete=True)),
+        ]
+    )
+    client = ws_app(fake_session)
+    with client.websocket_connect("/ws/session") as ws:
+        ws.send_json(
+            {"type": "init", "profile_id": profile["id"], "profile_name": profile["name"], "conversation_id": conv["id"]}
+        )
+        ws.receive_json()  # session_status
+        assert ws.receive_json()["type"] == "interrupted"
+        assert ws.receive_json()["type"] == "turn_complete"
+        ws.send_json({"type": "close"})

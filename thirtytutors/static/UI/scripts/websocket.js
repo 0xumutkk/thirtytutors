@@ -135,8 +135,9 @@ function connectWebSocket() {
     if (socket !== ws) return; // ignore messages from a superseded connection
     const msg = JSON.parse(event.data);
     if (msg.type === 'audio') {
-      playAudioChunk(msg.data);
+      receiveTutorAudio(msg.data);
     } else if (msg.type === 'interrupted') {
+      endTutorTurnAudio(); // a Stop's mute ends here too, if the student spoke before the reply finished
       // Deliberately no client action. This is Gemini's signal that the
       // response in progress got cut short - normally meaning the user
       // started talking over it, but Google's own docs note it can also
@@ -152,6 +153,8 @@ function connectWebSocket() {
     } else if (msg.type === 'transcript_out') {
       appendOrCreateBubble('tutor', msg.text);
     } else if (msg.type === 'turn_complete') {
+      attachTurnAudioToReply(takeCurrentTurnAudio());
+      endTutorTurnAudio();
       finalizeTurnBubbles();
       talkHint.textContent = idleTalkHint();
       noteConversationActivity();

@@ -49,8 +49,11 @@ _PUBLIC_EXACT = {
     "/ThirtyTutors.ico",
     "/UI/scripts/login.js",
     "/UI/scripts/theme.js",
+    "/manifest.webmanifest",
+    "/sw.js",
+    "/offline.html",
 }
-_PUBLIC_PREFIXES = ("/UI/styles/",)
+_PUBLIC_PREFIXES = ("/UI/styles/", "/UI/icons/")
 _DISABLED_EXACT = {
     "/api/open-data-folder",
     "/api/open-backups-folder",

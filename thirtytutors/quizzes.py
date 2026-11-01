@@ -15,6 +15,7 @@ never finished, however it was left.
 """
 
 import json
+import random
 import re
 import sqlite3
 import uuid
@@ -365,6 +366,68 @@ def get_reviewable_quiz_items(conversation_id: str, range_key: str = "all") -> l
         return items
     finally:
         conn.close()
+
+
+def build_saved_word_items(
+    saved_words: list[dict], other_terms: list[str], skip_terms: set[str], range_key: str = "all"
+) -> list[dict]:
+    """Test Yourself items for words the student saved: complete their own
+    sentence where possible, otherwise pick the word for its meaning. The
+    wrong options are the student's other words, so at least one is needed to
+    fill a blank and two for a meaning question. A word with no sentence
+    containing it and no meaning has nothing to ask, and is left out.
+    """
+    cutoff = _range_cutoff_iso(range_key)
+    pool: dict[str, str] = {}
+    for term in [w["term"] for w in saved_words] + other_terms:
+        pool.setdefault(term.strip().casefold(), term.strip())
+
+    items = []
+    for word in saved_words:
+        term = word["term"].strip()
+        key = term.casefold()
+        if key in skip_terms:
+            continue
+        if cutoff and datetime.fromtimestamp(word["created_ts"], UTC).isoformat() < cutoff:
+            continue
+        # Seeded by the word, so the same word keeps the same options between loads.
+        rng = random.Random(key)
+        distractors = [t for k, t in pool.items() if k != key]
+        rng.shuffle(distractors)
+
+        # Literal braces would read as extra blanks.
+        context = (word.get("context") or "").replace("{", "(").replace("}", ")")
+        cloze, blanks = re.subn(rf"(?<!\w){re.escape(term)}(?!\w)", "{0}", context, count=1, flags=re.IGNORECASE)
+        if blanks and distractors:
+            bank = [term, *distractors[:3]]
+            rng.shuffle(bank)
+            item = {
+                "question": "Complete the sentence:",
+                "item_type": "fill_blank_dragdrop",
+                "choices": [],
+                "correct_choice_index": 0,
+                "text_with_blanks": cloze,
+                "correct_answers": [term],
+                "word_bank": bank,
+            }
+        elif word.get("meaning") and len(distractors) >= 2:
+            choices = [term, *distractors[:3]]
+            rng.shuffle(choices)
+            item = {
+                "question": word["meaning"],
+                "item_type": "multiple_choice",
+                "choices": choices,
+                "correct_choice_index": choices.index(term),
+                "text_with_blanks": "",
+                "correct_answers": [],
+                "word_bank": [],
+            }
+        else:
+            continue
+        item["target_term"] = term
+        if _is_well_formed_quiz_item(item):
+            items.append(item)
+    return items
 
 
 def delete_conversation_quizzes(conversation_id: str) -> None:

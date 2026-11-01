@@ -1,0 +1,102 @@
+/* --- Phones: rules shared across pages ---
+   Loaded after every page's own stylesheet. Sizes follow the 44px minimum
+   touch target, and 16px text in fields stops iOS zooming in on focus. */
+
+/* Installed app: the page runs under the status bar and home indicator. */
+#app { grid-template-rows: calc(56px + env(safe-area-inset-top)) minmax(0, 1fr); }
+#topbar {
+  padding-top: env(safe-area-inset-top);
+  padding-left: max(20px, env(safe-area-inset-left));
+  padding-right: max(20px, env(safe-area-inset-right));
+}
+
+html, body { overscroll-behavior-y: none; }
+a, button, select, input, label { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+#talkBtn { touch-action: none; }
+
+#homeInstallCard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+#homeInstallCard[hidden] { display: none; }
+#homeInstallText { flex: 1; min-width: 0; margin: 0; font-size: 0.85rem; line-height: 1.4; }
+#homeInstallBtn { width: auto; margin: 0; padding: 0 16px; }
+#homeInstallBtn[hidden] { display: none; }
+
+/* A hover-only delete button can't be found on a touch screen. */
+@media (hover: none) {
+  .profile-tile-delete { opacity: 1; width: 32px; height: 32px; top: -8px; right: 0; }
+}
+
+@media (max-width: 640px) {
+  #topbar {
+    padding-left: max(10px, env(safe-area-inset-left));
+    padding-right: max(10px, env(safe-area-inset-right));
+  }
+  #topbar .icon-btn,
+  #profileMenuBtn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+  }
+  #profileMenuBtn { width: 44px; height: 44px; }
+  #sessionSwitcherBtn { min-height: 44px; width: 100%; max-width: none; }
+  /* The lesson's top bar is full: its session switcher takes what's left. */
+  #topbarLeft { flex-shrink: 0; }
+  #topbarRight { flex: 1; justify-content: flex-end; }
+  #sessionSwitcherWrap { flex: 0 1 auto; min-width: 0; }
+  #profileMenuWrap, #updateBellWrap { flex-shrink: 0; }
+  #quizSkipBtn, #quizNextBtn { min-width: 44px; }
+  .settings-dropdown-item { min-height: 44px; }
+
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea { font-size: 16px !important; }
+  .text-input,
+  select { min-height: 44px; }
+  .pill-btn,
+  .primary-btn,
+  .secondary-btn,
+  .home-secondary-btn,
+  .difficulty-option { min-height: 44px; }
+  .icon-btn { min-width: 44px; min-height: 44px; }
+
+  /* Modals: stay above the browser's own bars and scroll inside themselves. */
+  #notesModal,
+  #settingsModal,
+  #savedWordsModal,
+  #updateDetailModal { max-height: calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+  #notesModal,
+  #settingsModal,
+  #savedWordsModal { overscroll-behavior: contain; }
+
+  #statusToast { top: calc(62px + env(safe-area-inset-top)); }
+  #sessionSwitcherDropdown { top: calc(60px + env(safe-area-inset-top)); }
+  #wordSheet { bottom: max(16px, env(safe-area-inset-bottom)); }
+  #homeWrap { padding: 20px 16px calc(32px + env(safe-area-inset-bottom)); }
+
+  /* Dashboard: the two main actions share the width, numbers stay compact so
+     the sessions are reachable sooner, and a session's name gets a full row. */
+  #homeGreeting { font-size: 1.4rem; }
+  #homeHeroActions { width: 100%; }
+  #homeHeroActions button { flex: 1 1 0; padding: 0 12px; white-space: nowrap; }
+  #homeStats { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  .home-stat { padding: 10px 6px; align-items: center; text-align: center; }
+  .home-stat-value { font-size: 1.25rem; }
+  .home-stat-label { font-size: 0.66rem; line-height: 1.2; }
+  .home-panel { padding: 16px; }
+  .home-session-row { flex-wrap: wrap; padding: 8px 0; }
+  .home-session-open { flex: 1 1 100%; padding: 8px 4px; }
+  .home-session-name { white-space: normal; }
+  .home-session-badge { margin: 0 auto 0 4px; }
+  .home-session-row > :nth-child(2):not(.home-session-badge) { margin-left: auto; }
+  .home-link-btn { min-height: 44px; min-width: 44px; margin: -14px -8px -14px 0; padding: 0 8px; }
+  #homeInstallCard { padding: 12px; }
+}

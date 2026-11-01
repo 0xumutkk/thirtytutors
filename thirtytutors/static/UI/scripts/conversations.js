@@ -43,6 +43,7 @@ async function selectConversation(id) {
   currentConversationId = id;
   currentVoiceName = (conv.config || {}).voice_name || 'Kore';
   currentVoiceAlias = conv.tutor_name || currentVoiceName;
+  currentConversationLanguage = (conv.config || {}).target_language || '';
   renderConversationTranscript(conv.turns || []);
   updateSessionSwitcherLabel(conv);
 

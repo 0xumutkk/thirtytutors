@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>You're offline - ThirtyTutors</title>
+<style>
+  :root { color-scheme: light dark; --bg: #f4f0e8; --text: #232017; --muted: #756f60; --accent: #c1403d; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #141821; --text: #ede9e3; --muted: #8b93a3; } }
+  body {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 100dvh; margin: 0; padding: 24px; box-sizing: border-box; text-align: center;
+    background: var(--bg); color: var(--text); font-family: system-ui, sans-serif;
+  }
+  h1 { margin: 0 0 8px; font-size: 1.4rem; }
+  p { margin: 0 0 24px; color: var(--muted); line-height: 1.5; }
+  button {
+    min-height: 48px; padding: 0 28px; border: none; border-radius: 999px;
+    background: var(--accent); color: #fff; font: inherit; font-weight: 600;
+  }
+</style>
+</head>
+<body>
+  <h1>You're offline</h1>
+  <p>Lessons need a connection to your tutor.<br />Your progress is saved.</p>
+  <button type="button" onclick="location.reload()">Try again</button>
+</body>
+</html>

@@ -19,7 +19,7 @@ import numpy as np
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 
-from . import auth, backup, memory, quizzes, scenarios, speech_detection, stats, updater
+from . import auth, backup, memory, quizzes, scenarios, speech_detection, stats, updater, word_help
 from .constants import (
     APP_VERSION,
     ASSETS_DIR,
@@ -676,6 +676,95 @@ async def test_voice_enrollment_sample(profile_id: str, request: Request):
 # --- Conversations REST API (per profile) ---
 
 
+# --- Saved words (per profile) ---
+
+MAX_SAVED_TERM_LENGTH = 120
+MAX_SAVED_CONTEXT_LENGTH = 400
+MAX_SAVED_MEANING_LENGTH = 300
+MAX_SPOKEN_TEXT_LENGTH = 2000
+
+
+@router.get("/api/profiles/{profile_id}/saved-words")
+def list_saved_words(profile_id: str):
+    if get_profile_by_id(profile_id) is None:
+        raise HTTPException(404, "Profile not found")
+    return {"words": memory.get_saved_words(profile_id)}
+
+
+@router.post("/api/profiles/{profile_id}/saved-words")
+async def save_word(profile_id: str, request: Request):
+    if get_profile_by_id(profile_id) is None:
+        raise HTTPException(404, "Profile not found")
+    payload = await request.json()
+    term = str(payload.get("term") or "").strip()
+    if not term or len(term) > MAX_SAVED_TERM_LENGTH:
+        raise HTTPException(400, "A word or short phrase is required.")
+    context = str(payload.get("context") or "").strip()[:MAX_SAVED_CONTEXT_LENGTH] or None
+    meaning = str(payload.get("meaning") or "").strip()[:MAX_SAVED_MEANING_LENGTH] or None
+    conversation_id = payload.get("conversation_id")
+    conv = memory.get_conversation(conversation_id) if conversation_id else None
+    if conv is None or conv["profile_id"] != profile_id:
+        conversation_id = None
+    return memory.add_saved_word(profile_id, term, context, conversation_id, meaning)
+
+
+@router.post("/api/profiles/{profile_id}/conversations/{conversation_id}/speak")
+async def speak_in_tutor_voice(profile_id: str, conversation_id: str, request: Request):
+    conv = _get_owned_conversation(profile_id, conversation_id)
+    profile = get_profile_by_id(profile_id)
+    payload = await request.json()
+    text = str(payload.get("text") or "").strip()
+    if not text or len(text) > MAX_SPOKEN_TEXT_LENGTH:
+        raise HTTPException(400, "Text to read is required.")
+    voice_name = (conv.get("config") or {}).get("voice_name") or DEFAULT_VOICE
+    try:
+        audio = await asyncio.to_thread(word_help.speak_text, profile.get("api_key"), text, voice_name)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+    except Exception as e:  # noqa: BLE001
+        print(f"[speak] failed: {type(e).__name__}")
+        raise HTTPException(502, "Couldn't read this aloud right now.") from None
+    return {"audio": audio}
+
+
+@router.post("/api/profiles/{profile_id}/word-meaning")
+async def get_word_meaning(profile_id: str, request: Request):
+    profile = get_profile_by_id(profile_id)
+    if profile is None:
+        raise HTTPException(404, "Profile not found")
+    payload = await request.json()
+    term = str(payload.get("term") or "").strip()
+    if not term or len(term) > MAX_SAVED_TERM_LENGTH:
+        raise HTTPException(400, "A word or short phrase is required.")
+    context = str(payload.get("context") or "").strip()[:MAX_SAVED_CONTEXT_LENGTH]
+    conv = memory.get_conversation(payload.get("conversation_id") or "")
+    if conv is None or conv["profile_id"] != profile_id:
+        raise HTTPException(404, "Conversation not found")
+    try:
+        meaning = await asyncio.to_thread(
+            word_help.explain_word,
+            profile.get("api_key"),
+            term,
+            context,
+            word_help.explanation_language(conv.get("config") or {}),
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+    except Exception as e:  # noqa: BLE001
+        print(f"[word_meaning] failed: {type(e).__name__}")
+        raise HTTPException(502, "Couldn't get a meaning right now.") from None
+    if not meaning:
+        raise HTTPException(502, "Couldn't get a meaning right now.")
+    return {"meaning": meaning[:MAX_SAVED_MEANING_LENGTH]}
+
+
+@router.delete("/api/profiles/{profile_id}/saved-words/{word_id}")
+def remove_saved_word(profile_id: str, word_id: int):
+    if not memory.delete_saved_word(profile_id, word_id):
+        raise HTTPException(404, "Word not found")
+    return {"deleted": True}
+
+
 @router.get("/api/profiles/{profile_id}/conversations")
 def list_conversations_endpoint(profile_id: str):
     profile = get_profile_by_id(profile_id)
@@ -867,6 +956,12 @@ def get_reviewable_quiz_endpoint(profile_id: str, conversation_id: str, range: s
     if range not in _REVIEWABLE_QUIZ_RANGES:
         raise HTTPException(400, f"range must be one of: {', '.join(_REVIEWABLE_QUIZ_RANGES)}")
     items = quizzes.get_reviewable_quiz_items(conversation_id, range)
+    items += quizzes.build_saved_word_items(
+        memory.get_saved_words(profile_id),
+        memory.get_taught_vocab(conversation_id),
+        {(item.get("target_term") or "").strip().casefold() for item in items},
+        range,
+    )
     return {"items": items, "range": range}
 
 

@@ -28,6 +28,8 @@
 .settings-avatar-btn:hover { border-color: var(--accent); color: var(--text); }
 /* "Login" state - text instead of a single initial, so the button widens
    to fit rather than clipping (see min-width/padding above). */
+.settings-dropdown-item[hidden] { display: none; }
+
 .settings-avatar-btn.profile-menu-btn-login {
   font-size: 0.72rem;
   font-weight: 500;
