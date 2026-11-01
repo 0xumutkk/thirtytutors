@@ -16,6 +16,11 @@ from platformdirs import user_data_dir
 
 DEFAULT_DIFFICULTY = "intermediate"
 
+# Optional per-conversation learning settings - see create_conversation_endpoint
+# (routes_api.py) and build_system_instruction (tutor_instructions.py).
+CEFR_LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"]
+EXPLANATION_MODE_TARGET_ONLY = "target_only"
+
 DEFAULT_VOICE = "Kore"
 DEFAULT_NATIVE_LANGUAGE = "English"
 DEFAULT_TARGET_LANGUAGE = "Polish"

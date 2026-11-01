@@ -38,6 +38,38 @@
       </div>
 
       <div class="tutor-center-field">
+        <label class="field-label" for="currentLevelSelect">Your current level</label>
+        <select id="currentLevelSelect" class="text-input">
+          <option value="">Not set - use difficulty below</option>
+          <option value="A1">A1 - Beginner</option>
+          <option value="A2">A2 - Elementary</option>
+          <option value="B1">B1 - Intermediate</option>
+          <option value="B2">B2 - Upper intermediate</option>
+          <option value="C1">C1 - Advanced</option>
+        </select>
+      </div>
+
+      <div class="tutor-center-field">
+        <label class="field-label" for="goalLevelSelect">Your goal</label>
+        <select id="goalLevelSelect" class="text-input">
+          <option value="">No specific goal</option>
+          <option value="A2">A2 - Elementary</option>
+          <option value="B1">B1 - Intermediate</option>
+          <option value="B2">B2 - Upper intermediate</option>
+          <option value="C1">C1 - Advanced</option>
+          <option value="C2">C2 - Proficient</option>
+        </select>
+      </div>
+
+      <div class="tutor-center-field">
+        <label class="field-label" for="explanationModeSelect">Explanations</label>
+        <select id="explanationModeSelect" class="text-input">
+          <option value="">In my native language</option>
+          <option value="target_only">Only in the language I'm learning</option>
+        </select>
+      </div>
+
+      <div id="difficultyField" class="tutor-center-field">
         <label class="field-label">Difficulty</label>
         <div id="difficultyToggle" class="difficulty-toggle">
           <button type="button" class="difficulty-option" data-difficulty="beginner">Beginner</button>
@@ -78,5 +110,5 @@
   }
 }
 </script>
-<script type="module" src="/UI/scripts/avatarSelect.js?v=4"></script>
+<script type="module" src="/UI/scripts/avatarSelect.js?v=5"></script>
 {% endblock %}

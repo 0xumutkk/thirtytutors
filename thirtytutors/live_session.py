@@ -123,6 +123,7 @@ from .constants import (
     DEFAULT_NATIVE_LANGUAGE,
     DEFAULT_TARGET_LANGUAGE,
     DEFAULT_VOICE,
+    EXPLANATION_MODE_TARGET_ONLY,
     HANDSFREE_SILENCE_RMS_THRESHOLD,
     HANDSFREE_WINDOW_BYTES,
     MODEL_OPTIONS,
@@ -245,6 +246,11 @@ def build_config(
     name = profile.get("name") or "the student"
     native_language = conv_config.get("native_language") or DEFAULT_NATIVE_LANGUAGE
     target_language = conv_config.get("target_language") or DEFAULT_TARGET_LANGUAGE
+    # Target-only lessons use the target language wherever the prompts and
+    # the quiz tool would otherwise fall back to the student's native one.
+    target_only = conv_config.get("explanation_mode") == EXPLANATION_MODE_TARGET_ONLY
+    if target_only:
+        native_language = target_language
     voice_name = conv_config.get("voice_name") or DEFAULT_VOICE
     tutor_name = next(
         (v.get("alias") or v["name"] for v in VOICE_OPTIONS if v["name"] == voice_name),
@@ -267,6 +273,9 @@ def build_config(
         review_terms=review_terms,
         taught_vocab=taught_vocab,
         correction_loop=correction_loop,
+        current_level=conv_config.get("current_level"),
+        goal_level=conv_config.get("goal_level"),
+        target_only=target_only,
     )
 
     # Plain (non-transparent) resumption. transparent=True (Google's

@@ -17,7 +17,11 @@ from thirtytutors import live_session, quizzes
 from thirtytutors.tutor_instructions import (
     CONVERSATIONAL_RULES,
     CORRECTION_RULES,
+    DIFFICULTY_INSTRUCTIONS,
+    GOAL_LEVEL_TEMPLATE,
+    LEVEL_INSTRUCTIONS,
     SPACED_REPETITION_CONTEXT_TEMPLATE,
+    TARGET_ONLY_INSTRUCTION,
     TAUGHT_VOCAB_CONTEXT_TEMPLATE,
 )
 from thirtytutors.tutor_tools import build_quiz_tool
@@ -224,3 +228,61 @@ def test_default_scenario_keeps_default_workflow_rules():
     text = _system_instruction_text(config)
     assert CONVERSATIONAL_RULES.format(name="Alex", native_language="English", target_language="Spanish") in text
     assert CORRECTION_RULES.format(name="Alex", native_language="English", target_language="Spanish") not in text
+
+
+# --- Learning settings (level, goal, explanation language) ---
+
+
+def test_level_replaces_difficulty_block():
+    conv_config = {**_correction_conv_config(), "difficulty": "advanced", "current_level": "A2"}
+    text = _system_instruction_text(
+        live_session.build_config(_minimal_profile(), conv_config, "gemini-2.5-flash-native-audio-latest")
+    )
+    assert LEVEL_INSTRUCTIONS["A2"] in text
+    assert DIFFICULTY_INSTRUCTIONS["advanced"] not in text
+
+
+def test_difficulty_stays_without_level():
+    conv_config = {**_minimal_conv_config(), "difficulty": "advanced"}
+    text = _system_instruction_text(
+        live_session.build_config(_minimal_profile(), conv_config, "gemini-2.5-flash-native-audio-latest")
+    )
+    assert DIFFICULTY_INSTRUCTIONS["advanced"] in text
+    assert not any(pace in text for pace in LEVEL_INSTRUCTIONS.values())
+
+
+def test_goal_level_is_interpolated_only_when_set():
+    with_goal = {**_correction_conv_config(), "goal_level": "B2"}
+    text = _system_instruction_text(
+        live_session.build_config(_minimal_profile(), with_goal, "gemini-2.5-flash-native-audio-latest")
+    )
+    assert GOAL_LEVEL_TEMPLATE.format(name="Alex", target_language="Spanish", goal_level="B2") in text
+    without = _system_instruction_text(
+        live_session.build_config(_minimal_profile(), _correction_conv_config(), "gemini-2.5-flash-native-audio-latest")
+    )
+    assert "(CEFR)" not in without
+
+
+def test_target_only_removes_native_language_everywhere():
+    conv_config = {
+        "target_language": "Spanish",
+        "native_language": "Turkish",
+        "scenario": "speaking_coach",
+        "explanation_mode": "target_only",
+    }
+    config = live_session.build_config(_minimal_profile(), conv_config, "gemini-2.5-flash-native-audio-latest")
+    assert "Turkish" not in _system_instruction_text(config)
+    assert TARGET_ONLY_INSTRUCTION.format(name="Alex", target_language="Spanish") in _system_instruction_text(config)
+    quiz_tool = next(t for t in config.tools if t.function_declarations[0].name == "start_quiz")
+    question = quiz_tool.function_declarations[0].parameters.properties["items"].items.properties["question"]
+    assert "Turkish" not in question.description
+    assert "Spanish" in question.description
+
+
+def test_native_language_stays_by_default():
+    conv_config = {"target_language": "Spanish", "native_language": "Turkish", "scenario": "speaking_coach"}
+    text = _system_instruction_text(
+        live_session.build_config(_minimal_profile(), conv_config, "gemini-2.5-flash-native-audio-latest")
+    )
+    assert "Turkish" in text
+    assert TARGET_ONLY_INSTRUCTION.format(name="Alex", target_language="Spanish") not in text

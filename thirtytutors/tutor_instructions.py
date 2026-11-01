@@ -30,7 +30,9 @@ Assembly order (mirrors build_system_instruction below):
 
     1. # PERSONA          - scenario_template (scenarios/ package) + tutor identity
     2. # CONVERSATIONAL RULES  - CONVERSATIONAL_RULES
-    3.   difficulty addendum   - DIFFICULTY_INSTRUCTIONS[difficulty]
+    3.   difficulty addendum   - DIFFICULTY_INSTRUCTIONS[difficulty], or LEVEL_INSTRUCTIONS[current_level] when set
+         [learning goal]       - GOAL_LEVEL_TEMPLATE, only when a goal level is set
+         [target-only mode]    - TARGET_ONLY_INSTRUCTION, only when explanations stay in the target language
     4.   [memory context]      - MEMORY_CONTEXT_TEMPLATE, only on a fresh session with a stored summary
     5.   [taught vocabulary]   - TAUGHT_VOCAB_CONTEXT_TEMPLATE, only when the conversation has taught vocab on record
     6.   [trouble spots]       - SPACED_REPETITION_CONTEXT_TEMPLATE, only when review terms exist
@@ -109,6 +111,31 @@ DIFFICULTY_INSTRUCTIONS = {
     "intermediate": ("\n\nDifficulty: intermediate. Natural pace, everyday vocabulary."),
     "advanced": ("\n\nDifficulty: advanced. Native pace, idiomatic phrasing, minimal simplification."),
 }
+
+# Used instead of DIFFICULTY_INSTRUCTIONS when a conversation has a CEFR
+# level set - "advanced: native pace" and similar would contradict it.
+LEVEL_INSTRUCTIONS = {
+    "A1": "Speak very slowly and clearly, in very short sentences with the most common words.",
+    "A2": "Speak slowly and clearly, in short sentences with common words. Pause between sentences.",
+    "B1": "Speak a little slower than natural pace, in clear sentences with everyday vocabulary.",
+    "B2": "Speak at a natural pace, with varied vocabulary and common idioms.",
+    "C1": "Speak at native pace, with idiomatic phrasing and nuanced vocabulary.",
+    "C2": "Speak exactly as you would with an educated native speaker.",
+}
+LEVEL_TEMPLATE = "\n\n{name}'s current {target_language} level is {current_level} (CEFR). {pace}"
+
+GOAL_LEVEL_TEMPLATE = (
+    "\n\n{name}'s goal is confident, fluent {target_language} at {goal_level} (CEFR). "
+    "Get {name} speaking in longer stretches, with follow-up questions that need full answers. "
+    "Introduce one {goal_level} word, phrase or structure at a time, only when it fits what {name} just said, "
+    "and raise your own language slightly as {name} copes well."
+)
+
+TARGET_ONLY_INSTRUCTION = (
+    "\n\nThis is a {target_language}-only lesson: explain everything in simple {target_language}, "
+    "using easier words or an example when {name} doesn't understand. "
+    "If {name} uses another language, reply in {target_language} and help {name} say it in {target_language}."
+)
 
 # Appended only when a conversation is starting a fresh Live session (no
 # valid resumption handle) and has a stored rolling summary - re-seeds
@@ -225,6 +252,9 @@ def build_system_instruction(
     review_terms: list[str] | None = None,
     taught_vocab: list[str] | None = None,
     correction_loop: bool = False,
+    current_level: str | None = None,
+    goal_level: str | None = None,
+    target_only: bool = False,
 ) -> str:
     """Assembles the full Live API system_instruction string, in the exact
     order Gemini receives it - see this module's docstring for the order,
@@ -247,11 +277,22 @@ def build_system_instruction(
     rules = CORRECTION_RULES if correction_loop else CONVERSATIONAL_RULES
     guardrails = CORRECTION_GUARDRAILS if correction_loop else GUARDRAILS
 
+    if current_level in LEVEL_INSTRUCTIONS:
+        level_instruction = LEVEL_TEMPLATE.format(
+            **fmt_kwargs, current_level=current_level, pace=LEVEL_INSTRUCTIONS[current_level]
+        )
+    else:
+        level_instruction = difficulty_instruction.format(**fmt_kwargs)
+
     parts = [
         "# PERSONA\n" + scenario_template.format(**fmt_kwargs) + identity.format(**fmt_kwargs),
         rules.format(**fmt_kwargs),
-        difficulty_instruction.format(**fmt_kwargs),
+        level_instruction,
     ]
+    if goal_level:
+        parts.append(GOAL_LEVEL_TEMPLATE.format(**fmt_kwargs, goal_level=goal_level))
+    if target_only:
+        parts.append(TARGET_ONLY_INSTRUCTION.format(**fmt_kwargs))
     if summary_text:
         parts.append(MEMORY_CONTEXT_TEMPLATE.format(name=name, summary=summary_text))
     if taught_vocab:

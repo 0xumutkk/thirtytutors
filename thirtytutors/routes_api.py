@@ -23,6 +23,7 @@ from . import backup, memory, quizzes, scenarios, speech_detection, stats, updat
 from .constants import (
     APP_VERSION,
     ASSETS_DIR,
+    CEFR_LEVELS,
     DATA_DIR,
     DEFAULT_DIFFICULTY,
     DEFAULT_MIC_CALIBRATION_KEY,
@@ -31,6 +32,7 @@ from .constants import (
     DEFAULT_TARGET_LANGUAGE,
     DEFAULT_VOICE,
     ENROLLMENT_SENTENCES,
+    EXPLANATION_MODE_TARGET_ONLY,
     MODEL_OPTIONS,
     PROFILE_EDITABLE_FIELDS,
     SPEAKER_VERIFICATION_BACKEND,
@@ -685,6 +687,14 @@ async def create_conversation_endpoint(profile_id: str, request: Request):
         "scenario": payload.get("scenario") or scenarios.DEFAULT_SCENARIO,
         "difficulty": payload.get("difficulty") or profile.get("default_difficulty") or DEFAULT_DIFFICULTY,
     }
+    # Optional learning settings - left out entirely when unset, so such a
+    # conversation behaves exactly as if they didn't exist.
+    if payload.get("current_level") in CEFR_LEVELS:
+        config["current_level"] = payload["current_level"]
+    if payload.get("goal_level") in CEFR_LEVELS:
+        config["goal_level"] = payload["goal_level"]
+    if payload.get("explanation_mode") == EXPLANATION_MODE_TARGET_ONLY:
+        config["explanation_mode"] = EXPLANATION_MODE_TARGET_ONLY
     name = (payload.get("name") or "").strip() or None
     conv = memory.create_conversation(profile_id, config, name=name)
     patch_profile(profile_id, {"active_conversation_id": conv["id"]})

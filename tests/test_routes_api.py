@@ -411,3 +411,27 @@ def test_export_docx_404_for_unknown_conversation(client):
     profile = client.post("/api/profiles", json={"name": "Wissam"}).json()
     resp = client.get(f"/api/profiles/{profile['id']}/conversations/does-not-exist/notes/export.docx")
     assert resp.status_code == 404
+
+
+# --- Learning settings on conversation creation ---
+
+
+def test_create_conversation_stores_valid_learning_settings(client, make_profile):
+    profile = make_profile()
+    conv = client.post(
+        f"/api/profiles/{profile['id']}/conversations",
+        json={"current_level": "A2", "goal_level": "B2", "explanation_mode": "target_only"},
+    ).json()
+    assert conv["config"]["current_level"] == "A2"
+    assert conv["config"]["goal_level"] == "B2"
+    assert conv["config"]["explanation_mode"] == "target_only"
+
+
+def test_create_conversation_drops_unset_or_invalid_learning_settings(client, make_profile):
+    profile = make_profile()
+    conv = client.post(
+        f"/api/profiles/{profile['id']}/conversations",
+        json={"current_level": "Z9", "goal_level": None, "explanation_mode": "whatever"},
+    ).json()
+    for key in ("current_level", "goal_level", "explanation_mode"):
+        assert key not in conv["config"]

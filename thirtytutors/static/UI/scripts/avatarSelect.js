@@ -34,6 +34,10 @@ const closeAvatarSelectTutorialBtn = document.getElementById('closeAvatarSelectT
 attachLanguageAutocomplete(targetLanguageInput);
 
 const DRAFT_KEY = 'landingDraft';
+const currentLevelSelect = document.getElementById('currentLevelSelect');
+const goalLevelSelect = document.getElementById('goalLevelSelect');
+const explanationModeSelect = document.getElementById('explanationModeSelect');
+const difficultyField = document.getElementById('difficultyField');
 const existingProfileId = new URLSearchParams(window.location.search).get('profile_id');
 const DEFAULT_DIFFICULTY = 'intermediate';
 
@@ -42,6 +46,17 @@ let availableAvatars = [];
 let voicesData = [];
 let scenariosData = [];
 let selectedDifficulty = DEFAULT_DIFFICULTY;
+
+// A level replaces difficulty (see tutor_instructions.py), and a goal must
+// sit above it - option order in the HTML is CEFR order.
+currentLevelSelect.addEventListener('change', () => {
+  const current = currentLevelSelect.value;
+  difficultyField.hidden = Boolean(current);
+  [...goalLevelSelect.options].forEach((option) => {
+    option.disabled = Boolean(current && option.value && option.value <= current);
+  });
+  if (goalLevelSelect.selectedOptions[0].disabled) goalLevelSelect.value = '';
+});
 
 function updateNextEnabled() {
   nextBtn.disabled = !(selectedVoice && targetLanguageInput.value.trim());
@@ -156,7 +171,10 @@ function buildConversationName() {
   const difficultyLabel = selectedDifficulty.charAt(0).toUpperCase() + selectedDifficulty.slice(1);
   const scenarioId = scenarioSelect.value;
   const scenario = scenariosData.find((s) => s.id === scenarioId);
-  const parts = [target, difficultyLabel];
+  const current = currentLevelSelect.value;
+  const goal = goalLevelSelect.value;
+  const levelLabel = current && goal ? `${current} \u2192 ${goal}` : current || (goal ? `Goal ${goal}` : difficultyLabel);
+  const parts = [target, levelLabel];
   if (scenario && scenario.label !== 'Free Learning') parts.push(scenario.label);
   return parts.join(' \u00b7 ');
 }
@@ -204,6 +222,9 @@ async function createConversationForProfile(profileId, nativeLanguage, modelName
       model_name: modelName,
       scenario: scenarioSelect.value,
       difficulty: selectedDifficulty,
+      current_level: currentLevelSelect.value || null,
+      goal_level: goalLevelSelect.value || null,
+      explanation_mode: explanationModeSelect.value || null,
       name: buildConversationName(),
     }),
   });
