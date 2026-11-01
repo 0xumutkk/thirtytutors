@@ -198,10 +198,11 @@ def run(host: str = "127.0.0.1", port: int = 8000) -> None:
         # regardless of anything already sitting in the persistent WebView2
         # profile's cache (see the private_mode=False note above).
         #
-        # Points at /landing homepage on every launch - the last-active profile stays "logged
+        # Points at the /home dashboard on every launch - the last-active profile stays "logged
         # in" regardless (see localStorage.tutorProfileId, read by
-        # profileMenu.js's top-bar button on every page)
-        f"http://{host}:{port}/landing?v={int(time.time())}",
+        # profileMenu.js's top-bar button on every page), and home.js sends
+        # anyone without one on to /landing
+        f"http://{host}:{port}/home?v={int(time.time())}",
         width=1360,
         height=860,
         min_size=(1100, 700),

@@ -107,6 +107,7 @@ html, body {
 }
 #pageBody > #body,
 #pageBody > #landingWrap,
+#pageBody > #homeWrap,
 #pageBody > #avatarSelectApp {
   flex: 1;
   min-height: 0;

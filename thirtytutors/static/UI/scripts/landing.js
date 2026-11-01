@@ -1,12 +1,8 @@
-// ThirtyTutors - marketing/home page (/landing). The app's universal entry
-// point on every launch (see desktop.py) - the CTA buttons adapt to
-// whether a profile is already active (localStorage.tutorProfileId),
-// same idea as profileMenu.js's top-bar button, but this file doesn't
-// depend on that one having run first.
+// ThirtyTutors - marketing page (/landing), only ever seen with no active
+// profile: landing.html sends anyone logged in on to their /home dashboard.
 
 const heroCtaBtn = document.getElementById('heroCtaBtn');
 const finalCtaBtn = document.getElementById('finalCtaBtn');
-const finalCtaHeadline = document.getElementById('finalCtaHeadline');
 const tutorMarqueeTrack = document.getElementById('tutorMarqueeTrack');
 
 // Mirrors marketing_assets_source/cards/{males,females}/*.gif at release
@@ -17,18 +13,11 @@ const tutorMarqueeTrack = document.getElementById('tutorMarqueeTrack');
 const MALE_TUTORS = ['Brett', 'Dean', 'Ezra', 'Felix', 'Finn', 'Hugo', 'Jasper', 'Kai', 'Leo', 'Max', 'Miles', 'Milo', 'Nico', 'Oscar', 'Theo'];
 const FEMALE_TUTORS = ['Ava', 'Chloe', 'Elena', 'Holly', 'Isla', 'Jade', 'Lana', 'Maya', 'Mila', 'Nina', 'Piper', 'Ruby', 'Stella', 'Wren', 'Zoe'];
 
-function setCtaTarget(btn) {
-  const hasProfile = !!localStorage.getItem('tutorProfileId');
-  btn.textContent = hasProfile ? 'Continue learning' : 'Get started';
+[heroCtaBtn, finalCtaBtn].forEach((btn) => {
   btn.addEventListener('click', () => {
-    window.location.href = hasProfile ? '/' : '/get-started';
+    window.location.href = '/get-started';
   });
-}
-setCtaTarget(heroCtaBtn);
-setCtaTarget(finalCtaBtn);
-finalCtaHeadline.textContent = localStorage.getItem('tutorProfileId')
-  ? 'Pick up right where you left off.'
-  : 'Ready when you are.';
+});
 
 // --- Tutor card marquee ---
 // Interleaves male/female names (rather than one block of 15 then the

@@ -183,8 +183,13 @@ backBtn.addEventListener('click', () => {
   // Returning to a profile's detail modal (not just the bare /profiles
   // list) needs the id passed along so that page knows to reopen it -
   // see profilesPage.js's handling of ?open=.
-  if (new URLSearchParams(window.location.search).get('from') === 'home') {
+  const cameFrom = new URLSearchParams(window.location.search).get('from');
+  if (cameFrom === 'home') {
     window.location.href = '/';
+    return;
+  }
+  if (cameFrom === 'dashboard') {
+    window.location.href = '/home';
     return;
   }
   window.location.href = existingProfileId

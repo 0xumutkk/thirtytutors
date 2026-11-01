@@ -7,6 +7,12 @@
 {% block title %}ThirtyTutors AI - Learn a language, out loud{% endblock %}
 
 {% block styles %}
+<script>
+// Logged-in profiles get their dashboard instead - in <head> so the
+// marketing page never flashes first. home.js clears a stale id before
+// sending anyone back here, so these two can't bounce forever.
+if (localStorage.getItem('tutorProfileId')) window.location.replace('/home');
+</script>
 <link rel="stylesheet" href="/UI/styles/modals.css?v=1" />
 <link rel="stylesheet" href="/UI/styles/landing.css?v=1" />
 {% endblock %}
@@ -88,5 +94,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="/UI/scripts/landing.js?v=1"></script>
+<script src="/UI/scripts/landing.js?v=2"></script>
 {% endblock %}

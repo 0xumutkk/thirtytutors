@@ -1,0 +1,66 @@
+{% extends "index.html" %}
+
+{% block topbar_left_extra %}
+<span class="app-name-text">ThirtyTutors</span>
+{% endblock %}
+
+{% block title %}Home - ThirtyTutors AI{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="/UI/styles/home.css?v=1" />
+{% endblock %}
+
+{% block content %}
+<div id="homeWrap">
+  <div id="homeInner">
+
+    <section id="homeHero">
+      <div>
+        <h1 id="homeGreeting">Welcome back</h1>
+        <p id="homeResumeText">Loading your sessions...</p>
+      </div>
+      <div id="homeHeroActions">
+        <button id="homeContinueBtn" class="primary-btn" type="button" hidden>Continue learning</button>
+        <button id="homeNewSessionBtn" class="home-secondary-btn" type="button">+ New session</button>
+      </div>
+    </section>
+
+    <p id="homeStatus" role="alert" hidden></p>
+
+    <section id="homeStats" aria-label="Your progress">
+      <div class="home-stat"><span id="homeStreakValue" class="home-stat-value">-</span><span class="home-stat-label">Day streak</span></div>
+      <div class="home-stat"><span id="homeHoursValue" class="home-stat-value">-</span><span class="home-stat-label">Hours studied</span></div>
+      <div class="home-stat"><span id="homeSessionsValue" class="home-stat-value">-</span><span class="home-stat-label">Sessions</span></div>
+      <div class="home-stat"><span id="homeWordsValue" class="home-stat-value">-</span><span class="home-stat-label">Words mastered</span></div>
+    </section>
+
+    <div id="homeColumns">
+      <section id="homeSessions" class="home-panel">
+        <h2>Your sessions</h2>
+        <p id="homeReviewReminder" hidden></p>
+        <div id="homeSessionList"></div>
+      </section>
+
+      <div id="homeSide">
+        <section class="home-panel">
+          <div class="home-panel-header">
+            <h2>About you</h2>
+            <button id="homeEditProfileBtn" class="home-link-btn" type="button">Edit</button>
+          </div>
+          <dl id="homeProfileInfo"></dl>
+        </section>
+
+        <section class="home-panel">
+          <h2>Your languages</h2>
+          <div id="homeLanguageList"></div>
+        </section>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/UI/scripts/home.js?v=1"></script>
+{% endblock %}
