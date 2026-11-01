@@ -82,11 +82,14 @@ thirtytutors
 
 `thirtytutors setup` downloads the avatars, voices, and photos (about 460 MB) and creates a desktop shortcut. You'll enter your Gemini API key in the app when you create a profile. The desktop app keeps the 3D avatars.
 
+This installation runs on your own computer, with no login or invite code, and doesn't connect to any server of ours. Your conversations go only to Google's Gemini API.
+
 ---
 
 ## Run web mode
 
 Web mode serves the app to invited users, with one account per person.
+Each server is independent and creates its own invite codes.
 
 ```bash
 export THIRTYTUTORS_SECRET_KEY="$(openssl rand -hex 32)"
