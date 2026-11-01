@@ -43,6 +43,7 @@ from pathlib import Path
 import uvicorn
 import webview
 
+from . import macos_app
 from .main import app  # reuse the exact same FastAPI app defined in main.py
 
 # pywebview's icon= param wants a .ico on Windows and a .icns on macOS (per
@@ -208,7 +209,12 @@ def run(host: str = "127.0.0.1", port: int = 8000) -> None:
         min_size=(1100, 700),
         resizable=True,
     )
+    on_started = None
+    if sys.platform == "darwin":
+        macos_app.install_microphone_permission_handler({host, "localhost", "127.0.0.1"})
+        on_started = macos_app.activate_app
     webview.start(
+        on_started,
         private_mode=False,
         icon=str(ICON_PATH) if ICON_PATH.exists() else None,
         debug=False,  # Turn on for debugging.

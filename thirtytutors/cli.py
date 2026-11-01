@@ -27,6 +27,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from . import macos_app
 from .constants import DATA_DIR
 from .updater import (
     check_app_update,
@@ -140,45 +141,15 @@ def _create_shortcut_windows(console) -> None:
 
 
 def _create_shortcut_macos(console) -> None:
-    """A minimal real .app bundle (Info.plist + a launcher shell script +
-    the .icns) rather than a bare .command file, so it gets a proper Finder
-    icon and behaves like a normal double-clickable app.
-    """
-    thirtytutors_bin = shutil.which("thirtytutors")
-    if not thirtytutors_bin:
-        console.print("[yellow]Could not locate the thirtytutors executable on PATH - skipping desktop shortcut.[/yellow]")
+    """A real .app bundle (see macos_app.py for why the bundle has to be built
+    the way it is), symlinked from the Desktop."""
+    shortcut = macos_app.install_desktop_shortcut(_desktop_dir(), macos_app.ensure_app_bundle())
+    if shortcut is None:
+        console.print(
+            "[yellow]Something else is already named ThirtyTutors.app on your Desktop - skipping desktop shortcut.[/yellow]"
+        )
         return
-
-    app_dir = _desktop_dir() / "ThirtyTutors.app"
-    macos_dir = app_dir / "Contents" / "MacOS"
-    resources_dir = app_dir / "Contents" / "Resources"
-    macos_dir.mkdir(parents=True, exist_ok=True)
-    resources_dir.mkdir(parents=True, exist_ok=True)
-
-    icon = _icon_path()
-    if icon.is_file():
-        shutil.copy2(icon, resources_dir / "ThirtyTutors.icns")
-
-    info_plist = app_dir / "Contents" / "Info.plist"
-    info_plist.write_text(
-        '<?xml version="1.0" encoding="UTF-8"?>\n'
-        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
-        '<plist version="1.0">\n<dict>\n'
-        "  <key>CFBundleName</key><string>ThirtyTutors</string>\n"
-        "  <key>CFBundleExecutable</key><string>ThirtyTutors</string>\n"
-        "  <key>CFBundleIconFile</key><string>ThirtyTutors.icns</string>\n"
-        "  <key>CFBundleIdentifier</key><string>com.wissam.thirtytutors</string>\n"
-        "  <key>CFBundlePackageType</key><string>APPL</string>\n"
-        "  <key>CFBundleShortVersionString</key><string>1.0</string>\n"
-        "</dict>\n</plist>\n",
-        encoding="utf-8",
-    )
-
-    launcher = macos_dir / "ThirtyTutors"
-    launcher.write_text(f'#!/bin/bash\nexec "{thirtytutors_bin}" "$@"\n', encoding="utf-8")
-    launcher.chmod(launcher.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
-
-    console.print(f"[green]\u2713[/green] Desktop app created: {app_dir}")
+    console.print(f"[green]\u2713[/green] Desktop app created: {shortcut}")
 
 
 def _create_shortcut_linux(console) -> None:
@@ -317,11 +288,29 @@ def cmd_setup(args: argparse.Namespace) -> None:
     run_setup(force=args.force)
 
 
+def _run_in_macos_app_bundle(args: argparse.Namespace) -> None:
+    """Exits once the bundled app closes - the microphone only works from
+    inside it (see macos_app.py). If it can't be built or opened, returns so
+    the caller can still open the window here, just without the microphone."""
+    console = _console()
+    try:
+        app_dir = macos_app.ensure_app_bundle()
+    except (OSError, subprocess.CalledProcessError) as e:
+        console.print(f"[yellow]Could not build the app bundle, so the microphone won't work: {e}[/yellow]")
+        return
+    console.print(f"Opening ThirtyTutors - logs go to {macos_app.APP_LOG_FILE}")
+    if macos_app.launch_app_bundle(app_dir, ["--host", args.host, "--port", str(args.port)]) == 0:
+        sys.exit(0)
+    console.print("[yellow]Could not open the app bundle, so the microphone won't work.[/yellow]")
+
+
 def cmd_run(args: argparse.Namespace) -> None:
     if not _setup_already_done():
         run_setup(force=False)
     else:
         _print_app_update_notice(_console())
+    if sys.platform == "darwin" and not macos_app.running_in_app_bundle():
+        _run_in_macos_app_bundle(args)
     from . import desktop
 
     desktop.run(host=args.host, port=args.port)

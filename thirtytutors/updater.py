@@ -20,6 +20,7 @@ from datetime import datetime
 from importlib import metadata as importlib_metadata
 from pathlib import Path
 
+from . import macos_app
 from .constants import (
     APP_VERSION,
     ASSETS_DIR,
@@ -155,12 +156,20 @@ def run_pip_upgrade() -> tuple[bool, str]:
         # otherwise just launch another copy of the app instead of failing
         # loudly.
         return False, "This packaged build updates through the Store/installer, not pip."
+    python = sys.executable
+    env = None
+    bundled_venv_python = macos_app.venv_python()
+    if bundled_venv_python is not None:
+        # The macOS bundle's interpreter isn't the venv's - see macos_app.py.
+        python = str(bundled_venv_python)
+        env = {k: v for k, v in os.environ.items() if k != "PYTHONHOME"}
     try:
         result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--upgrade", PYPI_PROJECT],
+            [python, "-m", "pip", "install", "--upgrade", PYPI_PROJECT],
             capture_output=True,
             text=True,
             timeout=300,
+            env=env,
         )
         if result.returncode != 0:
             return False, (result.stderr or result.stdout or "pip exited non-zero with no output.")
@@ -261,6 +270,8 @@ def relaunch_app() -> None:
     # parses --port directly rather than through `-m thirtytutors`.
     if is_frozen_build():
         argv = [sys.executable, "--port", port]
+    elif macos_app.running_in_app_bundle():
+        argv = [str(macos_app.bundle_launcher()), "--port", port]
     else:
         argv = [sys.executable, "-m", "thirtytutors", "--port", port]
     if sys.platform == "win32":
