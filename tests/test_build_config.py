@@ -13,7 +13,7 @@ values actually get interpolated, and the tool schema declares what it's
 supposed to.
 """
 
-from thirtytutors import live_session, quizzes
+from thirtytutors import live_session, memory, quizzes
 from thirtytutors.tutor_instructions import (
     CONVERSATIONAL_RULES,
     CORRECTION_RULES,
@@ -291,3 +291,68 @@ def test_native_language_stays_by_default():
 def test_desktop_keeps_the_mood_rules():
     config = live_session.build_config(_minimal_profile(), _correction_conv_config(), "gemini-2.5-flash-native-audio-latest")
     assert "set_mood" in _system_instruction_text(config)
+
+
+# --- Exam mode (erasmus_exam scenario) ---
+
+
+def _exam_conv_config():
+    return {**_minimal_conv_config(), "scenario": "erasmus_exam"}
+
+
+def _tool_names(config):
+    return {f.name for tool in config.tools for f in tool.function_declarations}
+
+
+def test_exam_scenario_uses_only_the_exam_tools_and_examiner_rules(isolated_data_dir):
+    config = live_session.build_config({"id": "p1", "name": "Ada"}, _exam_conv_config(), "gemini-x")
+    assert _tool_names(config) == {"exam_timer", "save_exam_report"}
+    assert "neutral examiner" in config.system_instruction
+    assert "log_mistake" not in config.system_instruction
+    assert "start_quiz" not in config.system_instruction
+
+
+def test_exam_scenario_ignores_lesson_memory(isolated_data_dir):
+    config = live_session.build_config(
+        {"id": "p1", "name": "Ada"}, _exam_conv_config(), "gemini-x", summary_text="SECRET SUMMARY", review_terms=["SECRET TERM"]
+    )
+    assert "SECRET" not in config.system_instruction
+
+
+def test_exam_scenario_reads_previous_reports_for_that_profile_only(isolated_data_dir):
+    memory.save_exam_report(
+        "p1",
+        None,
+        {
+            "questions": [{"type": "A", "theme": "Health", "text": "Gym or outdoor sports?"}],
+            "errors": [{"said": "how much cost it", "correct": "how much does it cost", "category": "grammar"}],
+            "next_target": "Connect ideas with because.",
+        },
+    )
+    mine = live_session.build_config({"id": "p1", "name": "Ada"}, _exam_conv_config(), "gemini-x").system_instruction
+    other = live_session.build_config({"id": "p2", "name": "Ada"}, _exam_conv_config(), "gemini-x").system_instruction
+    assert "Gym or outdoor sports?" in mine
+    assert "how much cost it" in mine
+    assert "Connect ideas with because." in mine
+    assert "Gym or outdoor sports?" not in other
+
+
+def test_saved_exam_report_feeds_the_notes_as_mistakes(isolated_data_dir):
+    conv = memory.create_conversation("p1", {"scenario": "erasmus_exam"}, name="Exam")
+    report = {
+        "errors": [
+            {"said": "informations", "correct": "information", "category": "vocab"},
+            {"said": "he go", "correct": "he goes", "category": "grammar"},
+        ]
+    }
+    live_session._save_exam_report("p1", conv["id"], report)
+    assert memory.get_exam_reports("p1")[0]["errors"] == report["errors"]
+    by_term = {m["term"]: m for m in memory.get_vocab_mistakes(conv["id"])}
+    assert by_term["information"]["incorrect_form"] == "informations"
+    assert by_term["information"]["mistake_category"] == "word_choice"
+    assert by_term["he goes"]["mistake_category"] == "other"
+
+
+def test_other_scenarios_keep_their_tools(isolated_data_dir):
+    config = live_session.build_config({"id": "p1", "name": "Ada"}, _minimal_conv_config(), "gemini-x")
+    assert "exam_timer" not in _tool_names(config)

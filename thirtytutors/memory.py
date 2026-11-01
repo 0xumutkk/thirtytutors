@@ -142,6 +142,13 @@ def init_db() -> None:
               created_ts INTEGER NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS exam_reports (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              profile_id TEXT NOT NULL,
+              conversation_id TEXT,
+              report_json TEXT NOT NULL,
+              created_ts INTEGER NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS invites (
               code_hash TEXT PRIMARY KEY,
               created_ts INTEGER NOT NULL,
@@ -381,6 +388,7 @@ def delete_profile_state(profile_id: str) -> None:
     try:
         conn.execute("DELETE FROM profile_state WHERE profile_id=?", (profile_id,))
         conn.execute("DELETE FROM saved_words WHERE profile_id=?", (profile_id,))
+        conn.execute("DELETE FROM exam_reports WHERE profile_id=?", (profile_id,))
         conn.commit()
     finally:
         conn.close()
@@ -720,6 +728,31 @@ def record_term_review(conversation_id: str, term: str, correct: bool) -> None:
                 (conversation_id, term, "missed in quiz", ts, ts),
             )
         conn.commit()
+    finally:
+        conn.close()
+
+
+def save_exam_report(profile_id: str, conversation_id: str | None, report: dict) -> None:
+    conn = _connect()
+    try:
+        conn.execute(
+            "INSERT INTO exam_reports (profile_id, conversation_id, report_json, created_ts) VALUES (?,?,?,?)",
+            (profile_id, conversation_id, json.dumps(report, ensure_ascii=False), int(time.time())),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_exam_reports(profile_id: str, limit: int = 5) -> list[dict]:
+    """Newest first."""
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            "SELECT report_json, created_ts FROM exam_reports WHERE profile_id=? ORDER BY id DESC LIMIT ?",
+            (profile_id, limit),
+        ).fetchall()
+        return [{**json.loads(r["report_json"]), "created_ts": r["created_ts"]} for r in rows]
     finally:
         conn.close()
 

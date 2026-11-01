@@ -158,6 +158,8 @@ function connectWebSocket() {
       finalizeTurnBubbles();
       talkHint.textContent = idleTalkHint();
       noteConversationActivity();
+    } else if (msg.type === 'exam_timer') {
+      runExamTimer(msg.phase, msg.seconds);
     } else if (msg.type === 'mood_change') {
       if (window.setAvatarMood) window.setAvatarMood(msg.mood);
     } else if (msg.type === 'quiz_start') {

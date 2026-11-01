@@ -115,6 +115,89 @@ LOG_MISTAKE_TOOL = types.Tool(
     ]
 )
 
+# Only declared for exam scenarios (see scenarios/__init__.py). A Live model has
+# no clock, so the app runs these timers and tells the examiner when one ends.
+EXAM_TIMER_SECONDS = {"preparation": 60, "answer": 120}
+
+EXAM_TIMER_TOOL = types.Tool(
+    function_declarations=[
+        types.FunctionDeclaration(
+            name="exam_timer",
+            description=(
+                "Starts or stops the exam clock shown to the candidate.\n"
+                "**Invocation Condition:** Invoke with preparation after telling the candidate to prepare, "
+                "with answer after telling them their time starts, and with stop if they finish early."
+            ),
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "phase": types.Schema(type="STRING", enum=[*EXAM_TIMER_SECONDS, "stop"]),
+                },
+                required=["phase"],
+            ),
+        )
+    ]
+)
+
+_EXAM_QUESTION_SCHEMA = types.Schema(
+    type="OBJECT",
+    properties={
+        "type": types.Schema(type="STRING", enum=["A", "B"]),
+        "theme": types.Schema(type="STRING"),
+        "text": types.Schema(type="STRING"),
+    },
+    required=["type", "theme", "text"],
+)
+_EXAM_SCORE_SCHEMA = types.Schema(
+    type="OBJECT",
+    properties={
+        "task": types.Schema(type="NUMBER"),
+        "fluency": types.Schema(type="NUMBER"),
+        "grammar": types.Schema(type="NUMBER"),
+        "vocab": types.Schema(type="NUMBER"),
+    },
+    required=["task", "fluency", "grammar", "vocab"],
+)
+
+SAVE_EXAM_REPORT_TOOL = types.Tool(
+    function_declarations=[
+        types.FunctionDeclaration(
+            name="save_exam_report",
+            description=(
+                "Silently saves the finished mock exam, so later sessions can pick new themes and spot repeated errors.\n"
+                "**Invocation Condition:** Invoke once, right after the spoken feedback."
+            ),
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "questions": types.Schema(type="ARRAY", items=_EXAM_QUESTION_SCHEMA),
+                    "scores": types.Schema(
+                        type="OBJECT",
+                        properties={"q1": _EXAM_SCORE_SCHEMA, "q2": _EXAM_SCORE_SCHEMA},
+                    ),
+                    "listing_instead_of_sentences": types.Schema(type="BOOLEAN"),
+                    "errors": types.Schema(
+                        type="ARRAY",
+                        items=types.Schema(
+                            type="OBJECT",
+                            properties={
+                                "said": types.Schema(type="STRING"),
+                                "correct": types.Schema(type="STRING"),
+                                "category": types.Schema(
+                                    type="STRING", enum=["grammar", "vocab", "pronunciation", "structure"]
+                                ),
+                            },
+                            required=["said", "correct", "category"],
+                        ),
+                    ),
+                    "next_target": types.Schema(type="STRING"),
+                },
+                required=["questions", "scores", "listing_instead_of_sentences", "errors", "next_target"],
+            ),
+        )
+    ]
+)
+
 # Field-description templates for build_quiz_tool below - kept as their
 # own named constants (rather than inlined) purely so the {native_language}/
 # {target_language} placeholders are easy to spot, same reasoning as

@@ -133,7 +133,15 @@ from .constants import (
 from .profiles_store import get_client_for_key, get_profile_by_id, patch_profile
 from .summarization import summarize_conversation
 from .tutor_instructions import build_system_instruction
-from .tutor_tools import LOG_MISTAKE_TOOL, MISTAKE_CATEGORIES, MOOD_TOOL, build_quiz_tool
+from .tutor_tools import (
+    EXAM_TIMER_SECONDS,
+    EXAM_TIMER_TOOL,
+    LOG_MISTAKE_TOOL,
+    MISTAKE_CATEGORIES,
+    MOOD_TOOL,
+    SAVE_EXAM_REPORT_TOOL,
+    build_quiz_tool,
+)
 
 router = APIRouter()
 
@@ -174,6 +182,39 @@ WATCHDOG_POLL_INTERVAL_S = 2.0
 _VOICE_MESSAGE_TYPES = frozenset(
     {"start_turn", "audio_chunk", "turn_complete", "handsfree_start", "handsfree_chunk", "handsfree_stop"}
 )
+
+
+# The report's broader categories, mapped onto the ones the notes and trouble
+# spots already use.
+_EXAM_ERROR_CATEGORIES = {"vocab": "word_choice", "pronunciation": "pronunciation", "structure": "word_order"}
+
+_EXAM_TIME_UP_MESSAGES = {
+    "preparation": "[Preparation time is over.]",
+    "answer": "[The two minutes for this answer are over.]",
+}
+
+
+def _exam_history_text(profile_id: str | None) -> str | None:
+    """What the examiner needs from recent reports: which questions to avoid,
+    which errors to watch for, and the target that was set."""
+    reports = memory.get_exam_reports(profile_id) if profile_id else []
+    lines = []
+    for report in reports:
+        questions = "; ".join(str(q.get("text")) for q in report.get("questions") or [])
+        errors = "; ".join(f"'{e.get('said')}' -> '{e.get('correct')}'" for e in report.get("errors") or [])
+        lines.append(f"- Questions: {questions}. Errors: {errors or 'none'}. Target set: {report.get('next_target')}")
+    return "\n".join(lines) or None
+
+
+def _save_exam_report(profile_id: str, conversation_id: str, report: dict) -> None:
+    memory.save_exam_report(profile_id, conversation_id, report)
+    for error in report.get("errors") or []:
+        memory.record_mistake(
+            conversation_id,
+            str(error.get("said") or ""),
+            str(error.get("correct") or ""),
+            _EXAM_ERROR_CATEGORIES.get(error.get("category"), "other"),
+        )
 
 
 def _quiz_results_summary(items: list[dict]) -> str:
@@ -258,6 +299,7 @@ def build_config(
     scenario_template = scenarios.SCENARIO_TEMPLATES.get(scenario_id, scenarios.SCENARIO_TEMPLATES[scenarios.DEFAULT_SCENARIO])
     difficulty = conv_config.get("difficulty") or DEFAULT_DIFFICULTY
     correction_loop = scenario_id in scenarios.CORRECTION_LOOP_SCENARIOS
+    exam_mode = scenario_id in scenarios.EXAM_SCENARIOS
 
     system_instruction = build_system_instruction(
         scenario_template,
@@ -274,6 +316,8 @@ def build_config(
         goal_level=conv_config.get("goal_level"),
         target_only=target_only,
         mood_tool=not auth.is_hosted(),
+        exam_mode=exam_mode,
+        exam_history=_exam_history_text(profile.get("id")) if exam_mode else None,
     )
 
     # Plain (non-transparent) resumption. transparent=True (Google's
@@ -307,7 +351,9 @@ def build_config(
     kwargs = {
         "response_modalities": ["AUDIO"],
         "system_instruction": system_instruction,
-        "tools": [
+        "tools": [EXAM_TIMER_TOOL, SAVE_EXAM_REPORT_TOOL]
+        if exam_mode
+        else [
             *([] if auth.is_hosted() else [MOOD_TOOL]),
             build_quiz_tool(native_language=native_language, target_language=target_language),
             *([LOG_MISTAKE_TOOL] if correction_loop else []),
@@ -1032,6 +1078,7 @@ async def ws_session(websocket: WebSocket):
     # session, resumed below) or later when the tutor calls start_quiz mid-
     # conversation (see the tool_call handling in live_to_browser).
     quiz_state = {"active": False, "quiz_id": None}
+    exam_state = {"preparing": False}
     if conv is not None:
         in_progress_quiz = quizzes.get_in_progress_quiz(conv["id"])
         if in_progress_quiz is not None:
@@ -1211,6 +1258,11 @@ async def ws_session(websocket: WebSocket):
                         msg = await websocket.receive_json()
                         msg_type = msg.get("type")
 
+                        # The candidate's silent preparation minute: a stray
+                        # press would otherwise make the examiner reply.
+                        if exam_state["preparing"] and msg_type in _VOICE_MESSAGE_TYPES:
+                            continue
+
                         if quiz_state["active"] and msg_type in _VOICE_MESSAGE_TYPES:
                             continue  # voice input gated while a quiz is open - see quiz_state
 
@@ -1308,6 +1360,14 @@ async def ws_session(websocket: WebSocket):
                                     )
                                 except Exception as e:  # noqa: BLE001
                                     print(f"[browser_to_live] quiz skip injection failed: {type(e).__name__}: {e}")
+                            elif msg_type == "exam_time_up":
+                                exam_state["preparing"] = False
+                                message = _EXAM_TIME_UP_MESSAGES.get(msg.get("phase"))
+                                if message:
+                                    await sender.send_client_content(
+                                        turns=types.Content(role="user", parts=[types.Part(text=message)]),
+                                        turn_complete=True,
+                                    )
                             elif msg_type == "close":
                                 return
                         except Exception as e:
@@ -1471,6 +1531,14 @@ async def ws_session(websocket: WebSocket):
                                                 "items": payload.get("items"),
                                             }
                                         )
+                                    elif fc.name == "exam_timer":
+                                        phase = (fc.args or {}).get("phase")
+                                        exam_state["preparing"] = phase == "preparation"
+                                        await websocket.send_json(
+                                            {"type": "exam_timer", "phase": phase, "seconds": EXAM_TIMER_SECONDS.get(phase)}
+                                        )
+                                    elif fc.name == "save_exam_report" and conv is not None:
+                                        _save_exam_report(profile["id"], conv["id"], dict(fc.args or {}))
                                     elif fc.name == "log_mistake" and conv is not None:
                                         args = fc.args or {}
                                         category = args.get("category")

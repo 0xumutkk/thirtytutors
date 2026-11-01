@@ -247,6 +247,8 @@ def _without_mood_rules(instruction: str) -> str:
         line for line in instruction.splitlines(keepends=True) if "set_mood" not in line or "trouble spot" in line
     ).replace(", set_mood or any other tool", " or any other tool")
 
+EXAM_HISTORY_HEADER = "\n\n# PREVIOUS SESSIONS\nUse these to pick new themes and to spot repeated errors.\n"
+
 
 def build_system_instruction(
     scenario_template: str,
@@ -264,6 +266,8 @@ def build_system_instruction(
     goal_level: str | None = None,
     target_only: bool = False,
     mood_tool: bool = True,
+    exam_mode: bool = False,
+    exam_history: str | None = None,
 ) -> str:
     """Assembles the full Live API system_instruction string, in the exact
     order Gemini receives it - see this module's docstring for the order,
@@ -280,6 +284,11 @@ def build_system_instruction(
         "target_language": target_language,
         "tutor_name": tutor_name,
     }
+    if exam_mode:
+        # A neutral examiner: none of the tutoring rules or lesson memory apply.
+        instruction = scenario_template.format(**fmt_kwargs)
+        return instruction + (EXAM_HISTORY_HEADER + exam_history if exam_history else "")
+
     difficulty_instruction = DIFFICULTY_INSTRUCTIONS.get(difficulty, DIFFICULTY_INSTRUCTIONS[DEFAULT_DIFFICULTY])
 
     identity = CORRECTION_PERSONA_IDENTITY if correction_loop else PERSONA_IDENTITY

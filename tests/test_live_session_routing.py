@@ -751,6 +751,82 @@ def test_voice_input_gated_while_quiz_active(ws_app, make_profile, make_conversa
     assert fake_session.sent_realtime_inputs == []
 
 
+# --- Exam mode timers and report ---
+
+
+def _init_exam_session(ws, profile, conv):
+    ws.send_json(
+        {
+            "type": "init",
+            "profile_id": profile["id"],
+            "profile_name": profile["name"],
+            "conversation_id": conv["id"],
+        }
+    )
+    assert ws.receive_json()["type"] == "session_status"
+
+
+def test_exam_preparation_silences_voice_until_time_up_tells_the_examiner(ws_app, make_profile, make_conversation):
+    profile = make_profile(api_key="fake-key")
+    conv = make_conversation(profile["id"], target_language="English", scenario="erasmus_exam")
+    fake_session = FakeLiveSession(
+        responses=[_response(tool_call=_tool_call(_function_call("exam_timer", {"phase": "preparation"})))]
+    )
+    client = ws_app(fake_session)
+
+    with client.websocket_connect("/ws/session") as ws:
+        _init_exam_session(ws, profile, conv)
+        assert ws.receive_json() == {"type": "exam_timer", "phase": "preparation", "seconds": 60}
+
+        ws.send_json({"type": "start_turn"})
+        ws.send_json({"type": "turn_complete"})
+        ws.send_json({"type": "exam_time_up", "phase": "preparation"})
+        ws.send_json({"type": "start_turn"})
+        ws.send_json({"type": "close"})
+
+    assert len(fake_session.sent_tool_responses) == 1
+    assert fake_session.sent_client_contents[0]["turns"].parts[0].text == "[Preparation time is over.]"
+    assert len(fake_session.sent_realtime_inputs) == 1  # only the turn started after preparation
+
+
+def test_exam_timer_stop_reaches_the_browser_without_seconds(ws_app, make_profile, make_conversation):
+    profile = make_profile(api_key="fake-key")
+    conv = make_conversation(profile["id"], target_language="English", scenario="erasmus_exam")
+    fake_session = FakeLiveSession(responses=[_response(tool_call=_tool_call(_function_call("exam_timer", {"phase": "stop"})))])
+    client = ws_app(fake_session)
+
+    with client.websocket_connect("/ws/session") as ws:
+        _init_exam_session(ws, profile, conv)
+        assert ws.receive_json() == {"type": "exam_timer", "phase": "stop", "seconds": None}
+        ws.send_json({"type": "close"})
+
+
+def test_save_exam_report_tool_call_is_stored_with_its_mistakes(ws_app, make_profile, make_conversation):
+    profile = make_profile(api_key="fake-key")
+    conv = make_conversation(profile["id"], target_language="English", scenario="erasmus_exam")
+    report = {
+        "questions": [{"type": "A", "theme": "Health", "text": "Gym or outdoor sports?"}],
+        "errors": [{"said": "he go", "correct": "he goes", "category": "grammar"}],
+        "next_target": "Connect ideas.",
+    }
+    fake_session = FakeLiveSession(
+        responses=[
+            _response(tool_call=_tool_call(_function_call("save_exam_report", report))),
+            _response(server_content=_server_content(turn_complete=True)),
+        ]
+    )
+    client = ws_app(fake_session)
+
+    with client.websocket_connect("/ws/session") as ws:
+        _init_exam_session(ws, profile, conv)
+        assert ws.receive_json()["type"] == "turn_complete"
+        ws.send_json({"type": "close"})
+
+    assert fake_session.sent_tool_responses
+    assert memory.get_exam_reports(profile["id"])[0]["next_target"] == "Connect ideas."
+    assert memory.get_vocab_mistakes(conv["id"])[0]["term"] == "he goes"
+
+
 # --- go_away mid-session reconnect ---
 
 
