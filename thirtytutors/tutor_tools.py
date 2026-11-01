@@ -64,6 +64,57 @@ MOOD_TOOL = types.Tool(
     ]
 )
 
+MISTAKE_CATEGORIES = [
+    "verb_tense",
+    "subject_verb_agreement",
+    "word_choice",
+    "collocation",
+    "preposition",
+    "article",
+    "word_order",
+    "pronunciation",
+    "other",
+]
+
+# Only declared for correction-loop scenarios (see scenarios/__init__.py), so
+# every other scenario's tool set stays exactly as it was.
+LOG_MISTAKE_TOOL = types.Tool(
+    function_declarations=[
+        types.FunctionDeclaration(
+            name="log_mistake",
+            description=(
+                "Silently records a language mistake the student just made, so "
+                "recurring patterns can be tracked across sessions.\n"
+                "**Invocation Condition:** Invoke this tool in the same turn you "
+                "correct a mistake, once per distinct mistake."
+            ),
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "incorrect": types.Schema(
+                        type="STRING",
+                        description="What the student actually said, as a short phrase.",
+                    ),
+                    "correct": types.Schema(
+                        type="STRING",
+                        description="The corrected form of that same phrase.",
+                    ),
+                    "category": types.Schema(
+                        type="STRING",
+                        enum=MISTAKE_CATEGORIES,
+                        description="The single best-fitting type of mistake.",
+                    ),
+                    "explanation": types.Schema(
+                        type="STRING",
+                        description="One short sentence on why the corrected form is right.",
+                    ),
+                },
+                required=["incorrect", "correct", "category", "explanation"],
+            ),
+        )
+    ]
+)
+
 # Field-description templates for build_quiz_tool below - kept as their
 # own named constants (rather than inlined) purely so the {native_language}/
 # {target_language} placeholders are easy to spot, same reasoning as

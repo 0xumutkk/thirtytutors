@@ -205,3 +205,34 @@ def test_profile_enrollment_dir_round_trip_via_plain_copy(make_profile, tmp_path
     shutil.copytree(backup_copy, source)
     restored = np.load(mic_dir / "reference_embedding.npy")
     np.testing.assert_array_equal(restored, dummy_reference)
+
+
+# --- Live mistake fields ---
+
+
+def test_mistake_fields_survive_export_and_import(make_profile, make_conversation):
+    profile = make_profile(name="Alice", target_language="English")
+    conv = make_conversation(profile["id"], target_language="English")
+    memory.record_mistake(conv["id"], "I have went", "I have gone", "verb_tense", "Perfect takes the participle.")
+
+    exported = memory.export_profile_conversations(profile["id"])
+    memory.import_profile_conversations(profile["id"], exported)
+
+    [row] = memory.get_vocab_mistakes(conv["id"])
+    assert row["incorrect_form"] == "I have went"
+    assert row["mistake_category"] == "verb_tense"
+
+
+def test_import_accepts_backup_without_mistake_fields(make_profile, make_conversation):
+    profile = make_profile(name="Alice", target_language="English")
+    conv = make_conversation(profile["id"], target_language="English")
+    memory.upsert_vocab_mistake(conv["id"], "ser vs estar", note="confused the two")
+
+    exported = memory.export_profile_conversations(profile["id"])
+    for v in exported[0]["vocab_mistakes"]:
+        del v["incorrect_form"], v["mistake_category"]
+    memory.import_profile_conversations(profile["id"], exported)
+
+    [row] = memory.get_vocab_mistakes(conv["id"])
+    assert row["term"] == "ser vs estar"
+    assert row["mistake_category"] is None

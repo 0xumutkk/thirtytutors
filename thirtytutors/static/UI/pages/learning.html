@@ -7,12 +7,26 @@
 <span id="modelDot"></span><span id="modelNameText"></span>
 {% endblock %}
 
+{% block topbar_right %}
+<div id="sessionSwitcherWrap">
+  <button id="sessionSwitcherBtn" type="button" aria-haspopup="true" aria-expanded="false" title="Sessions">
+    <span id="sessionSwitcherLabel">Sessions</span><span aria-hidden="true">&#9662;</span>
+  </button>
+  <div id="sessionSwitcherDropdown" class="settings-dropdown">
+    <div id="sessionSwitcherList"></div>
+    <p id="sessionSwitcherStatus" hidden></p>
+    <button id="sessionSwitcherNewBtn" class="pill-btn" type="button">+ New session</button>
+  </div>
+</div>
+{% endblock %}
+
 {% block styles %}
 <link rel="stylesheet" href="/UI/styles/main.css?v=1" />
 <link rel="stylesheet" href="/UI/styles/avatar_drawer.css?v=1" />
 <link rel="stylesheet" href="/UI/styles/quiz_drawer.css?v=1" />
 <link rel="stylesheet" href="/UI/styles/sidebar.css?v=1" />
 <link rel="stylesheet" href="/UI/styles/modals.css?v=1" />
+<link rel="stylesheet" href="/UI/styles/session_switcher.css?v=1" />
 {% endblock %}
 
 {% block content %}
@@ -27,7 +41,8 @@
 <script src="/UI/scripts/state.js?v=1"></script>
 <script src="/UI/scripts/transcript.js?v=1"></script>
 <script src="/UI/scripts/profiles.js?v=1"></script>
-<script src="/UI/scripts/conversations.js?v=1"></script>
+<script src="/UI/scripts/conversations.js?v=2"></script>
+<script src="/UI/scripts/sessionSwitcher.js?v=1"></script>
 <script src="/UI/scripts/audio.js?v=1"></script>
 <script src="/UI/scripts/quiz/quizRenderers.js?v=1"></script>
 <script src="/UI/scripts/quiz/quizDragDrop.js?v=1"></script>

@@ -145,6 +145,15 @@ def init_db() -> None:
         except sqlite3.OperationalError as e:
             if "duplicate column" not in str(e).lower():
                 raise
+        # Same pattern, for the columns record_mistake fills in. Both stay
+        # NULL on rows written by summarization/quiz answers, which don't
+        # know a mistake's category or the student's original wording.
+        for column in ("incorrect_form", "mistake_category"):
+            try:
+                conn.execute(f"ALTER TABLE vocab_mistakes ADD COLUMN {column} TEXT")
+            except sqlite3.OperationalError as e:
+                if "duplicate column" not in str(e).lower():
+                    raise
         conn.commit()
     finally:
         conn.close()
@@ -581,11 +590,48 @@ def upsert_vocab_mistake(conversation_id: str, term: str, note: str | None = Non
         conn.close()
 
 
+def record_mistake(conversation_id: str, incorrect: str, correct: str, category: str, explanation: str | None = None) -> None:
+    """Records one mistake the tutor caught live (the log_mistake tool - see
+    tutor_tools.py), using the same vocab_mistakes row as summarization and
+    quiz answers so the corrected form also resurfaces as a trouble spot.
+    The row is keyed on the corrected form: repeating a mistake bumps
+    occurrences, and any earlier quiz streak no longer holds, so it resets.
+    """
+    if not correct or not correct.strip():
+        return
+    term = correct.strip()
+    incorrect = (incorrect or "").strip() or None
+    ts = int(time.time())
+    conn = _connect()
+    try:
+        existing = conn.execute(
+            "SELECT id FROM vocab_mistakes WHERE conversation_id=? AND term=? COLLATE NOCASE",
+            (conversation_id, term),
+        ).fetchone()
+        if existing:
+            conn.execute(
+                "UPDATE vocab_mistakes SET note=COALESCE(?, note), incorrect_form=COALESCE(?, incorrect_form), "
+                "mistake_category=?, last_seen_ts=?, occurrences=occurrences+1, correct_streak=0 WHERE id=?",
+                (explanation, incorrect, category, ts, existing["id"]),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO vocab_mistakes "
+                "(conversation_id, term, note, incorrect_form, mistake_category, first_seen_ts, last_seen_ts, occurrences) "
+                "VALUES (?,?,?,?,?,?,?,1)",
+                (conversation_id, term, explanation, incorrect, category, ts, ts),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def get_vocab_mistakes(conversation_id: str) -> list[dict]:
     conn = _connect()
     try:
         rows = conn.execute(
-            "SELECT term, note, first_seen_ts, last_seen_ts, occurrences, correct_streak FROM vocab_mistakes "
+            "SELECT term, note, incorrect_form, mistake_category, first_seen_ts, last_seen_ts, occurrences, correct_streak "
+            "FROM vocab_mistakes "
             "WHERE conversation_id=? ORDER BY last_seen_ts DESC",
             (conversation_id,),
         ).fetchall()
@@ -748,8 +794,8 @@ def export_profile_conversations(profile_id: str) -> list[dict]:
             conv["vocab_mistakes"] = [
                 dict(r)
                 for r in conn.execute(
-                    "SELECT term, note, first_seen_ts, last_seen_ts, occurrences, correct_streak "
-                    "FROM vocab_mistakes WHERE conversation_id=?",
+                    "SELECT term, note, incorrect_form, mistake_category, first_seen_ts, last_seen_ts, "
+                    "occurrences, correct_streak FROM vocab_mistakes WHERE conversation_id=?",
                     (cid,),
                 ).fetchall()
             ]
@@ -816,12 +862,16 @@ def import_profile_conversations(profile_id: str, conversations: list[dict]) -> 
             for v in conv.get("vocab_mistakes", []):
                 conn.execute(
                     "INSERT INTO vocab_mistakes "
-                    "(conversation_id, term, note, first_seen_ts, last_seen_ts, occurrences, correct_streak) "
-                    "VALUES (?,?,?,?,?,?,?)",
+                    "(conversation_id, term, note, incorrect_form, mistake_category, "
+                    "first_seen_ts, last_seen_ts, occurrences, correct_streak) "
+                    "VALUES (?,?,?,?,?,?,?,?,?)",
                     (
                         cid,
                         v["term"],
                         v["note"],
+                        # .get: backups exported before these columns existed.
+                        v.get("incorrect_form"),
+                        v.get("mistake_category"),
                         v["first_seen_ts"],
                         v["last_seen_ts"],
                         v["occurrences"],

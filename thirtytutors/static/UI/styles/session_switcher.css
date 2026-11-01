@@ -1,0 +1,76 @@
+/* --- Learning page's top-bar session switcher (see sessionSwitcher.js) ---
+   The dropdown itself reuses .settings-dropdown from settings.css. */
+
+#sessionSwitcherWrap {
+  position: relative;
+}
+
+#sessionSwitcherBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 240px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel-raised);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 0.83rem;
+  cursor: pointer;
+  transition: border-color 0.2s ease;
+}
+#sessionSwitcherBtn:hover { border-color: var(--accent); }
+
+#sessionSwitcherLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#sessionSwitcherDropdown {
+  width: 300px;
+  max-width: calc(100vw - 32px);
+}
+
+#sessionSwitcherList {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.session-switcher-row {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-body);
+  text-align: left;
+  cursor: pointer;
+}
+.session-switcher-row:hover { background: var(--panel-raised); }
+.session-switcher-row.active { background: var(--accent-soft); }
+
+.session-switcher-name,
+.session-switcher-meta {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-switcher-name { font-size: 0.85rem; font-weight: 500; }
+.session-switcher-meta { margin-top: 2px; color: var(--text-muted); font-size: 0.74rem; }
+
+#sessionSwitcherStatus {
+  margin: 6px 10px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+#sessionSwitcherNewBtn {
+  width: 100%;
+  margin-top: 6px;
+}

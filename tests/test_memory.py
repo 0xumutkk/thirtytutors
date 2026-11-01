@@ -431,3 +431,39 @@ def test_profile_state_scoped_to_profile():
     memory.add_seconds_studied("p2", 5)
     assert memory.get_profile_state("p1")["total_seconds_studied"] == 100
     assert memory.get_profile_state("p2")["total_seconds_studied"] == 5
+
+
+# --- Live mistake logging (record_mistake) ---
+
+
+def test_record_mistake_stores_category_and_original_wording(make_profile, make_conversation):
+    conv = make_conversation(make_profile(target_language="English")["id"], target_language="English")
+    memory.record_mistake(conv["id"], "gain money", "earn money", "collocation", "Income takes 'earn'.")
+    [row] = memory.get_vocab_mistakes(conv["id"])
+    assert row["term"] == "earn money"
+    assert row["incorrect_form"] == "gain money"
+    assert row["mistake_category"] == "collocation"
+    assert row["note"] == "Income takes 'earn'."
+    assert row["occurrences"] == 1
+    assert memory.get_review_candidates(conv["id"]) == ["earn money"]
+
+
+def test_record_mistake_repeat_bumps_count_and_resets_streak(make_profile, make_conversation):
+    conv = make_conversation(make_profile(target_language="English")["id"], target_language="English")
+    memory.record_mistake(conv["id"], "gain money", "earn money", "collocation")
+    memory.record_term_review(conv["id"], "earn money", correct=True)
+    memory.record_term_review(conv["id"], "earn money", correct=True)
+    assert memory.get_review_candidates(conv["id"]) == []
+
+    memory.record_mistake(conv["id"], "win money", "Earn Money", "collocation")
+    [row] = memory.get_vocab_mistakes(conv["id"])
+    assert row["occurrences"] == 2
+    assert row["correct_streak"] == 0
+    assert row["incorrect_form"] == "win money"
+    assert memory.get_review_candidates(conv["id"]) == ["earn money"]
+
+
+def test_record_mistake_ignores_empty_correction(make_profile, make_conversation):
+    conv = make_conversation(make_profile(target_language="English")["id"], target_language="English")
+    memory.record_mistake(conv["id"], "gain money", "   ", "collocation")
+    assert memory.get_vocab_mistakes(conv["id"]) == []

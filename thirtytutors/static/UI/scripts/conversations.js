@@ -1,7 +1,8 @@
 // ThirtyTutors - loads the active conversation and connects the websocket
-// for it. Switching between languages or adding a new one happens on
-// /profiles now (see profileDetail.js) - this only ever deals with
-// "whichever conversation is currently active" for the loaded profile.
+// for it. Switching conversations or adding a new one happens in
+// sessionSwitcher.js or on /profiles (see profileDetail.js) - this only ever
+// deals with "whichever conversation is currently active" for the loaded
+// profile.
 // Voice/model/language for that conversation are fixed at creation time
 // (via /landing + /avatar-select) - there's no live-editing UI for them
 // on this page anymore, so there's nothing here to push config changes
@@ -43,6 +44,7 @@ async function selectConversation(id) {
   currentVoiceName = (conv.config || {}).voice_name || 'Kore';
   currentVoiceAlias = conv.tutor_name || currentVoiceName;
   renderConversationTranscript(conv.turns || []);
+  updateSessionSwitcherLabel(conv);
 
   if (ws) {
     ws.manualClose = true;

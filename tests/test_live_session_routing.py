@@ -1230,3 +1230,53 @@ def test_resumable_sender_replay_unconsumed_is_a_noop_when_buffer_empty():
     _run(sender.replay_unconsumed("push-to-talk"))
 
     assert session.realtime_inputs == []
+
+
+# --- log_mistake tool-call routing ---
+
+
+def _run_log_mistake(ws_app, make_profile, make_conversation, args):
+    profile = make_profile(api_key="fake-key")
+    conv = make_conversation(profile["id"], target_language="English", scenario="speaking_coach")
+    fake_session = FakeLiveSession(
+        responses=[
+            _response(tool_call=_tool_call(_function_call("log_mistake", args))),
+            _response(server_content=_server_content(turn_complete=True)),
+        ]
+    )
+    client = ws_app(fake_session)
+    with client.websocket_connect("/ws/session") as ws:
+        ws.send_json(
+            {
+                "type": "init",
+                "profile_id": profile["id"],
+                "profile_name": profile["name"],
+                "conversation_id": conv["id"],
+            }
+        )
+        ws.receive_json()  # session_status
+        assert ws.receive_json()["type"] == "turn_complete"
+        ws.send_json({"type": "close"})
+    assert fake_session.sent_tool_responses
+    return memory.get_vocab_mistakes(conv["id"])
+
+
+def test_log_mistake_tool_call_persists_and_acks(ws_app, make_profile, make_conversation):
+    [row] = _run_log_mistake(
+        ws_app,
+        make_profile,
+        make_conversation,
+        {"incorrect": "gain money", "correct": "earn money", "category": "collocation", "explanation": "Income takes 'earn'."},
+    )
+    assert row["term"] == "earn money"
+    assert row["mistake_category"] == "collocation"
+
+
+def test_log_mistake_unknown_category_falls_back_to_other(ws_app, make_profile, make_conversation):
+    [row] = _run_log_mistake(
+        ws_app,
+        make_profile,
+        make_conversation,
+        {"incorrect": "gain money", "correct": "earn money", "category": "made_up", "explanation": "x"},
+    )
+    assert row["mistake_category"] == "other"

@@ -135,7 +135,7 @@ from .constants import (
 from .profiles_store import get_client_for_key, get_profile_by_id, patch_profile
 from .summarization import summarize_conversation
 from .tutor_instructions import build_system_instruction
-from .tutor_tools import MOOD_TOOL, build_quiz_tool
+from .tutor_tools import LOG_MISTAKE_TOOL, MISTAKE_CATEGORIES, MOOD_TOOL, build_quiz_tool
 
 router = APIRouter()
 
@@ -254,6 +254,7 @@ def build_config(
     scenario_id = conv_config.get("scenario") or scenarios.DEFAULT_SCENARIO
     scenario_template = scenarios.SCENARIO_TEMPLATES.get(scenario_id, scenarios.SCENARIO_TEMPLATES[scenarios.DEFAULT_SCENARIO])
     difficulty = conv_config.get("difficulty") or DEFAULT_DIFFICULTY
+    correction_loop = scenario_id in scenarios.CORRECTION_LOOP_SCENARIOS
 
     system_instruction = build_system_instruction(
         scenario_template,
@@ -265,6 +266,7 @@ def build_config(
         summary_text=summary_text,
         review_terms=review_terms,
         taught_vocab=taught_vocab,
+        correction_loop=correction_loop,
     )
 
     # Plain (non-transparent) resumption. transparent=True (Google's
@@ -298,7 +300,11 @@ def build_config(
     kwargs = {
         "response_modalities": ["AUDIO"],
         "system_instruction": system_instruction,
-        "tools": [MOOD_TOOL, build_quiz_tool(native_language=native_language, target_language=target_language)],
+        "tools": [
+            MOOD_TOOL,
+            build_quiz_tool(native_language=native_language, target_language=target_language),
+            *([LOG_MISTAKE_TOOL] if correction_loop else []),
+        ],
         "input_audio_transcription": types.AudioTranscriptionConfig(),
         "output_audio_transcription": types.AudioTranscriptionConfig(),
         "speech_config": types.SpeechConfig(
@@ -1464,6 +1470,23 @@ async def ws_session(websocket: WebSocket):
                                                 "items": payload.get("items"),
                                             }
                                         )
+                                    elif fc.name == "log_mistake" and conv is not None:
+                                        args = fc.args or {}
+                                        category = args.get("category")
+                                        memory.record_mistake(
+                                            conv["id"],
+                                            str(args.get("incorrect") or ""),
+                                            str(args.get("correct") or ""),
+                                            category if category in MISTAKE_CATEGORIES else "other",
+                                            args.get("explanation"),
+                                        )
+                                        with observability.span(
+                                            "tool_call:log_mistake",
+                                            input=dict(args),
+                                            session_id=conv["id"],
+                                            user_id=profile.get("id"),
+                                        ):
+                                            pass
                                     function_responses.append(
                                         types.FunctionResponse(
                                             id=fc.id,

@@ -10,10 +10,11 @@ scenario's own TEMPLATE, see that file's CONVERSATIONAL_RULES /
 DIFFICULTY_INSTRUCTIONS.
 """
 
-from . import airport, cafe, directions, free_learning, letters_and_numbers, restaurant
+from . import airport, cafe, directions, free_learning, letters_and_numbers, restaurant, speaking_coach
 
 _MODULES = {
     "free_learning": free_learning,
+    "speaking_coach": speaking_coach,
     "restaurant": restaurant,
     "cafe": cafe,
     "airport": airport,
@@ -24,5 +25,10 @@ _MODULES = {
 DEFAULT_SCENARIO = "free_learning"
 
 SCENARIO_TEMPLATES = {sid: mod.TEMPLATE for sid, mod in _MODULES.items()}
+
+# Scenarios whose module sets CORRECTION_LOOP = True use the correction-first
+# rules (tutor_instructions.py) and the log_mistake tool (tutor_tools.py)
+# instead of the default teach-five-words-then-quiz workflow.
+CORRECTION_LOOP_SCENARIOS = {sid for sid, mod in _MODULES.items() if getattr(mod, "CORRECTION_LOOP", False)}
 
 SCENARIO_OPTIONS = [{"id": sid, "label": mod.LABEL, "description": mod.DESCRIPTION} for sid, mod in _MODULES.items()]

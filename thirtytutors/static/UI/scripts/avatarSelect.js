@@ -165,6 +165,10 @@ backBtn.addEventListener('click', () => {
   // Returning to a profile's detail modal (not just the bare /profiles
   // list) needs the id passed along so that page knows to reopen it -
   // see profilesPage.js's handling of ?open=.
+  if (new URLSearchParams(window.location.search).get('from') === 'home') {
+    window.location.href = '/';
+    return;
+  }
   window.location.href = existingProfileId
     ? `/profiles?open=${encodeURIComponent(existingProfileId)}`
     : '/get-started';

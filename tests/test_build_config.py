@@ -14,7 +14,12 @@ supposed to.
 """
 
 from thirtytutors import live_session, quizzes
-from thirtytutors.tutor_instructions import SPACED_REPETITION_CONTEXT_TEMPLATE, TAUGHT_VOCAB_CONTEXT_TEMPLATE
+from thirtytutors.tutor_instructions import (
+    CONVERSATIONAL_RULES,
+    CORRECTION_RULES,
+    SPACED_REPETITION_CONTEXT_TEMPLATE,
+    TAUGHT_VOCAB_CONTEXT_TEMPLATE,
+)
 from thirtytutors.tutor_tools import build_quiz_tool
 
 
@@ -192,3 +197,30 @@ def test_validate_quiz_items_silent_when_counts_match(capsys):
 def test_validate_quiz_items_ignores_multiple_choice_items(capsys):
     live_session._validate_quiz_items([{"item_type": "multiple_choice", "text_with_blanks": "", "correct_answers": []}])
     assert capsys.readouterr().out == ""
+
+
+# --- Correction loop (speaking_coach scenario) ---
+
+
+def _correction_conv_config():
+    return {**_minimal_conv_config(), "scenario": "speaking_coach"}
+
+
+def test_correction_scenario_adds_log_mistake_tool():
+    config = live_session.build_config(_minimal_profile(), _correction_conv_config(), "gemini-2.5-flash-native-audio-latest")
+    assert _tool_function_names(config) == {"set_mood", "start_quiz", "log_mistake"}
+
+
+def test_correction_scenario_replaces_default_workflow_rules():
+    config = live_session.build_config(_minimal_profile(), _correction_conv_config(), "gemini-2.5-flash-native-audio-latest")
+    text = _system_instruction_text(config)
+    assert CORRECTION_RULES.format(name="Alex", native_language="English", target_language="Spanish") in text
+    assert CONVERSATIONAL_RULES.format(name="Alex", native_language="English", target_language="Spanish") not in text
+    assert text.count("# GUARDRAILS") == 1
+
+
+def test_default_scenario_keeps_default_workflow_rules():
+    config = live_session.build_config(_minimal_profile(), _minimal_conv_config(), "gemini-2.5-flash-native-audio-latest")
+    text = _system_instruction_text(config)
+    assert CONVERSATIONAL_RULES.format(name="Alex", native_language="English", target_language="Spanish") in text
+    assert CORRECTION_RULES.format(name="Alex", native_language="English", target_language="Spanish") not in text
