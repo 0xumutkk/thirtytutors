@@ -148,18 +148,12 @@ function connectWebSocket() {
       // this signal would only ever be truncating the tutor's speech in
       // response to a phantom trigger.
     } else if (msg.type === 'transcript_in') {
-      // Deliberately not rendered - see transcript.js's renderConversationTranscript
-      // for the matching change on the history-reload path, and the reasoning
-      // (Gemini's own input_audio_transcription is frequently badly garbled for
-      // non-native/accented speech, unrelated to whether the model actually
-      // understood the audio correctly - showing it was more confusing than
-      // useful). The message itself still arrives and is still stored/
-      // summarized exactly as before - this only skips the UI bubble.
+      appendOrCreateBubble('mine', msg.text);
     } else if (msg.type === 'transcript_out') {
       appendOrCreateBubble('tutor', msg.text);
     } else if (msg.type === 'turn_complete') {
       finalizeTurnBubbles();
-      talkHint.textContent = 'Hold to speak';
+      talkHint.textContent = idleTalkHint();
       noteConversationActivity();
     } else if (msg.type === 'mood_change') {
       if (window.setAvatarMood) window.setAvatarMood(msg.mood);

@@ -336,7 +336,9 @@ async def login(request: Request, response: Response):
     user = verify_login(payload.get("email"), payload.get("password"))
     if user is None:
         _login_failures[key].append(time.time())
-        raise HTTPException(401, "Wrong email or password.")
+        # The same message whether or not the account exists, so it can't be
+        # used to find out who has one.
+        raise HTTPException(401, "Wrong email or password. New here? You need an invite code to create an account.")
     _login_failures.pop(key, None)
     _set_session_cookie(response, create_session(user["id"]))
     return {"email": user["email"]}

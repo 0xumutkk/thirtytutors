@@ -7,7 +7,7 @@ from pathlib import Path
 from fastapi import APIRouter, Request
 from fastapi.templating import Jinja2Templates
 
-from . import updater
+from . import auth, updater
 
 # Frontend is composed via Jinja2 from static/UI (index.html layout +
 # pages/ + styles/ + scripts/) instead of one flat index.html/app.js/
@@ -21,6 +21,8 @@ from . import updater
 # the process's current working directory, same reasoning as main.py's
 # STATIC_DIR - a pip-installed app can't assume it's run from a repo root.
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "static" / "UI"))
+
+templates.env.globals["is_hosted"] = auth.is_hosted
 
 router = APIRouter()
 

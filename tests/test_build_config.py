@@ -286,3 +286,8 @@ def test_native_language_stays_by_default():
     )
     assert "Turkish" in text
     assert TARGET_ONLY_INSTRUCTION.format(name="Alex", target_language="Spanish") not in text
+
+
+def test_desktop_keeps_the_mood_rules():
+    config = live_session.build_config(_minimal_profile(), _correction_conv_config(), "gemini-2.5-flash-native-audio-latest")
+    assert "set_mood" in _system_instruction_text(config)

@@ -106,7 +106,10 @@ function appendOrCreateBubble(who, textChunk) {
     body.textContent = textChunk;
     bubble.appendChild(label);
     bubble.appendChild(body);
-    transcriptArea.appendChild(bubble);
+    // The student's transcription can arrive after the tutor has started
+    // replying - it still belongs before that reply.
+    const tutorReply = who === 'mine' ? activeBubbles.tutor : null;
+    transcriptArea.insertBefore(bubble, tutorReply ? tutorReply.el : null);
     activeBubbles[who] = { el: bubble, textSpan: body };
   }
   transcriptArea.scrollTop = transcriptArea.scrollHeight;
@@ -133,21 +136,13 @@ function renderHistoryBubble(who, text) {
 function renderConversationTranscript(turns) {
   finalizeTurnBubbles();
   transcriptArea.innerHTML = '';
-  // 'user' turns are stored (they still feed memory/summarization) but not
-  // rendered - see websocket.js's transcript_in handler for the matching
-  // change and the reasoning (unreliable transcription for the student's
-  // own speech). Filtered before the empty-state check, not after, so a
-  // conversation with only a user turn so far (e.g. disconnected before
-  // the tutor replied) still shows the empty-state message instead of a
-  // blank area.
-  const tutorTurns = (turns || []).filter((t) => t.role !== 'user');
-  if (tutorTurns.length === 0) {
+  if (!turns || turns.length === 0) {
     const fresh = document.createElement('div');
     fresh.id = 'emptyState';
     fresh.textContent = 'Hold the button below and start speaking.';
     transcriptArea.appendChild(fresh);
     return;
   }
-  tutorTurns.forEach((t) => renderHistoryBubble('tutor', t.text));
+  turns.forEach((t) => renderHistoryBubble(t.role === 'user' ? 'mine' : 'tutor', t.text));
   transcriptArea.scrollTop = transcriptArea.scrollHeight;
 }

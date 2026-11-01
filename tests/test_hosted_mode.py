@@ -378,3 +378,58 @@ def auth_assets_dir():
     from thirtytutors.main import ASSETS_DIR
 
     return ASSETS_DIR
+
+
+def test_failed_login_reads_the_same_with_or_without_an_account():
+    _signed_up("a@example.com")
+    client = _client()
+    known = client.post("/api/auth/login", json={"email": "a@example.com", "password": "wrong password"})
+    unknown = client.post("/api/auth/login", json={"email": "nobody@example.com", "password": "wrong password"})
+    assert known.status_code == unknown.status_code == 401
+    assert known.json() == unknown.json()
+    assert "invite code" in known.json()["detail"]
+
+
+# --- No 3D avatars on the web ---
+
+
+def test_lesson_page_has_no_3d_code_or_camera_button():
+    html = _signed_up().get("/").text
+    assert "avatarDrawer.js" not in html
+    assert "talkinghead" not in html
+    assert "cameraToggleBtn" not in html
+    assert "talkBtn" in html
+
+
+def test_selection_page_is_told_not_to_load_3d():
+    assert "window.TT_NO_3D = true" in _signed_up().get("/avatar-select").text
+
+
+def test_tutors_are_available_from_photos_alone(isolated_data_dir, monkeypatch):
+    from thirtytutors import routes_api
+
+    photos = isolated_data_dir / "assets" / "photos"
+    photos.mkdir(parents=True)
+    (photos / "Kore.webp").write_bytes(b"x")
+    monkeypatch.setattr(routes_api, "ASSETS_DIR", isolated_data_dir / "assets")
+    assert _signed_up().get("/api/avatars").json()["available"] == ["Kore"]
+
+
+def test_tutor_has_no_mood_tool_or_rules():
+    from thirtytutors import live_session
+
+    config = live_session.build_config(
+        {"id": "p", "name": "Alex", "api_key": "k"},
+        {"target_language": "English", "native_language": "Turkish", "scenario": "speaking_coach"},
+        "gemini-2.5-flash-native-audio-latest",
+    )
+    names = {fn.name for tool in config.tools for fn in tool.function_declarations}
+    assert names == {"start_quiz", "log_mistake"}
+    text = (
+        config.system_instruction
+        if isinstance(config.system_instruction, str)
+        else "".join(p.text or "" for p in config.system_instruction.parts)
+    )
+    assert "set_mood" not in text
+    assert "Quiz on real mistakes" in text
+    assert "trouble spot" in text

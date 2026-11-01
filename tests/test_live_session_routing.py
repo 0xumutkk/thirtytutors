@@ -25,6 +25,7 @@ import asyncio
 import base64
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -1280,3 +1281,38 @@ def test_log_mistake_unknown_category_falls_back_to_other(ws_app, make_profile, 
         {"incorrect": "gain money", "correct": "earn money", "category": "made_up", "explanation": "x"},
     )
     assert row["mistake_category"] == "other"
+
+
+# --- Hands-free without speaker verification ---
+
+
+def _pcm_window_b64(amplitude):
+    samples = int(live_session.HANDSFREE_WINDOW_BYTES / 2)
+    return base64.b64encode(np.full(samples, amplitude, dtype=np.int16).tobytes()).decode()
+
+
+def test_handsfree_forwards_speech_and_closes_turn_on_silence_without_any_setup(
+    ws_app, make_profile, make_conversation, monkeypatch
+):
+    profile = make_profile(api_key="fake-key")
+    conv = make_conversation(profile["id"], target_language="English")
+
+    def must_not_run(*args, **kwargs):
+        raise AssertionError("speaker verification is switched off")
+
+    monkeypatch.setattr(live_session.speech_detection, "verify", must_not_run)
+    fake_session = FakeLiveSession(responses=[])
+    client = ws_app(fake_session)
+
+    with client.websocket_connect("/ws/session") as ws:
+        ws.send_json(
+            {"type": "init", "profile_id": profile["id"], "profile_name": profile["name"], "conversation_id": conv["id"]}
+        )
+        ws.receive_json()  # session_status
+        ws.send_json({"type": "handsfree_start"})
+        ws.send_json({"type": "handsfree_chunk", "data": _pcm_window_b64(8000)})
+        ws.send_json({"type": "handsfree_chunk", "data": _pcm_window_b64(0)})
+        ws.send_json({"type": "close"})
+
+    sent_keys = [next(iter(kwargs)) for kwargs in fake_session.sent_realtime_inputs]
+    assert sent_keys == ["activity_start", "audio", "activity_end"]

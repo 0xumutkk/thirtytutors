@@ -15,7 +15,8 @@
 // Loaded on demand: three.js plus a ~14 MB model is a lot to make a phone pay
 // for just to pick a tutor, so there the 3D preview only runs when asked for.
 const loadAvatarPreview = () => import('/UI/scripts/avatarPreview.js');
-const lightPreview = window.matchMedia('(max-width: 900px), (pointer: coarse)').matches;
+const no3d = window.TT_NO_3D === true; // hosted mode has no avatar files at all
+const lightPreview = no3d || window.matchMedia('(max-width: 900px), (pointer: coarse)').matches;
 
 const femaleGrid = document.getElementById('femaleGrid');
 const maleGrid = document.getElementById('maleGrid');
@@ -152,7 +153,7 @@ async function selectAvatar(voiceName, tileEl) {
 
   if (lightPreview && !avatarHeadReady) {
     avatarPreviewHint.textContent = displayName;
-    avatarPreview3dBtn.hidden = false;
+    avatarPreview3dBtn.hidden = no3d;
     playVoiceSample(voiceName);
     return;
   }

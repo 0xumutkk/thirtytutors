@@ -14,7 +14,6 @@ For local development against a live source checkout, use `pip install -e .`
 first so the thirtytutors command runs against this tree directly.
 """
 
-import asyncio
 import mimetypes
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -23,7 +22,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, live_session, memory, quizzes, routes_api, routes_pages, speech_detection
+from . import auth, live_session, memory, quizzes, routes_api, routes_pages
 from .constants import ASSETS_DIR
 from .profiles_store import migrate_legacy_model_name, migrate_legacy_profile_state
 
@@ -63,9 +62,6 @@ async def _warm_up_speaker_models(app: FastAPI):
     # forever, with no UI to fix it after the fact - see
     # migrate_legacy_model_name's own docstring.
     migrate_legacy_model_name()
-
-    # Kick off background model warmup
-    asyncio.create_task(asyncio.to_thread(speech_detection.warm_up))
 
     yield  # Hand control back to FastAPI so the server starts listening
 

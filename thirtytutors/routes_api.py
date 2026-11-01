@@ -116,6 +116,9 @@ def get_available_avatars():
     .glb files are downloaded separately (see cli.py), not shipped in the
     pip package.
     """
+    if auth.is_hosted():
+        # No 3D avatars on the web - a tutor only needs a photo and a voice there.
+        return {"available": sorted(p.stem for p in (ASSETS_DIR / "photos").glob("*.webp"))}
     avatar_dir = ASSETS_DIR / "avatar"
     if not avatar_dir.is_dir():
         return {"available": []}

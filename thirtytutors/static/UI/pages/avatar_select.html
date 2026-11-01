@@ -17,8 +17,13 @@
     </div>
 
     <div class="tutor-center">
+      {% if is_hosted() %}
+      <h2 class="tutor-center-title">Choose Your Tutor</h2>
+      <p class="tutor-center-subtitle">Tap a face to hear their voice.</p>
+      {% else %}
       <h2 class="tutor-center-title">Choose Your Tutor Avatar</h2>
       <p class="tutor-center-subtitle">Click a face to preview them live, right here.</p>
+      {% endif %}
       <button id="watchAvatarSelectTutorialBtn" class="pill-btn avatar-select-tutorial-btn" type="button">▶ Watch a quick tutorial on starting a session</button>
       <div id="avatarPreviewFrame">
         <div id="avatarPreview"></div>
@@ -102,6 +107,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script>window.TT_NO_3D = {{ is_hosted()|tojson }};</script>
 <script type="importmap">
 {
   "imports": {
@@ -111,5 +117,5 @@
   }
 }
 </script>
-<script type="module" src="/UI/scripts/avatarSelect.js?v=9"></script>
+<script type="module" src="/UI/scripts/avatarSelect.js?v=10"></script>
 {% endblock %}

@@ -129,6 +129,9 @@
   100% { box-shadow: 0 0 0 22px rgba(193, 64, 61, 0); }
 }
 
+/* Keeps the talk button centered where there's no camera button (hosted mode). */
+.talk-side-spacer { width: 40px; }
+
 #talkHint {
   font-size: 0.78rem;
   color: var(--text-muted);

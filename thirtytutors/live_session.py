@@ -14,15 +14,13 @@ Turn signaling (hands-free mode):
 
     The server itself decides turn boundaries here, since the client has no
     natural start/stop signal when the mic never closes. Incoming audio is
-    accumulated into rolling ~2s windows (HANDSFREE_WINDOW_BYTES); each
-    window is speaker-verified (speech_detection.verify) against the
-    profile's enrolled voice before being forwarded to Gemini - this can't
-    piggyback on Gemini's own turn-complete signal, since the decision to
-    forward has to happen before Gemini ever sees the audio. A window with
-    real energy that fails verification (someone else talking) is dropped
-    silently without ending an in-progress turn; a window at/below
-    HANDSFREE_SILENCE_RMS_THRESHOLD is treated as a pause and closes the
-    turn (activity_end) if one was open. See handle_handsfree_window below.
+    accumulated into rolling ~2s windows (HANDSFREE_WINDOW_BYTES). A window
+    with speech-level energy is forwarded to Gemini; one at/below the mic's
+    silence threshold is treated as a pause and closes the turn (activity_end)
+    if one was open. See handle_handsfree_window below. Nothing checks WHO is
+    speaking, so nearby voices count too - speaker verification
+    (speech_detection/) cost a torch model on the server and an enrollment step
+    for each mic, and is switched off.
 
 Both sides of the transcript come directly from Gemini's own Live API:
 input_audio_transcription for the student's side, output_audio_transcription
@@ -129,7 +127,6 @@ from .constants import (
     MODEL_OPTIONS,
     RETRY_ATTEMPTS,
     RETRY_BASE_DELAY,
-    SPEAKER_VERIFICATION_THRESHOLD,
     VOICE_OPTIONS,
     get_api_voice_name,
 )
@@ -276,6 +273,7 @@ def build_config(
         current_level=conv_config.get("current_level"),
         goal_level=conv_config.get("goal_level"),
         target_only=target_only,
+        mood_tool=not auth.is_hosted(),
     )
 
     # Plain (non-transparent) resumption. transparent=True (Google's
@@ -310,7 +308,7 @@ def build_config(
         "response_modalities": ["AUDIO"],
         "system_instruction": system_instruction,
         "tools": [
-            MOOD_TOOL,
+            *([] if auth.is_hosted() else [MOOD_TOOL]),
             build_quiz_tool(native_language=native_language, target_language=target_language),
             *([LOG_MISTAKE_TOOL] if correction_loop else []),
         ],
@@ -1087,7 +1085,6 @@ async def ws_session(websocket: WebSocket):
     mic_key = profile.get("mic_label") or DEFAULT_MIC_CALIBRATION_KEY
     mic_calibration = (profile.get("mic_calibrations") or {}).get(mic_key) or {}
     hf_silence_threshold = mic_calibration.get("silence_rms_threshold") or HANDSFREE_SILENCE_RMS_THRESHOLD
-    hf_similarity_threshold = mic_calibration.get("speaker_threshold") or SPEAKER_VERIFICATION_THRESHOLD
 
     # Reconnect-storm guard for the main loop below (go_away / mid-session
     # error reconnects) - see RAPID_RECONNECT_WINDOW_S/RAPID_RECONNECT_LIMIT.
@@ -1177,10 +1174,9 @@ async def ws_session(websocket: WebSocket):
             try:
 
                 async def handle_handsfree_window(window_bytes: bytes):
-                    """One ~2s window of continuous hands-free mic audio: decide
-                    silence vs speech vs "not the enrolled speaker", and forward,
-                    drop, or close out the current turn accordingly. See the
-                    module docstring's hands-free section for the full picture.
+                    """One ~2s window of continuous hands-free mic audio: forward
+                    it if it has speech-level energy, otherwise close out the
+                    current turn. See the module docstring's hands-free section.
                     """
                     audio_f32 = speech_detection.pcm16_bytes_to_float32(window_bytes)
                     rms = float(np.sqrt(np.mean(audio_f32.astype(np.float64) ** 2))) if len(audio_f32) else 0.0
@@ -1194,31 +1190,6 @@ async def ws_session(websocket: WebSocket):
                             turn_state["started_at"] = time.monotonic()
                             turn_state["waiting_long_sent"] = False
                         return
-
-                    try:
-                        # CPU/torch work - off the event loop, same reasoning as
-                        # summarize_conversation's asyncio.to_thread usage.
-                        result = await asyncio.to_thread(
-                            speech_detection.verify,
-                            profile.get("id"),
-                            mic_key,
-                            audio_f32,
-                            hf_silence_threshold,
-                            hf_similarity_threshold,
-                        )
-                    except Exception as e:  # noqa: BLE001
-                        import traceback
-
-                        print(f"[handsfree] verification failed, forwarding unfiltered this window: {type(e).__name__}: {e}")
-                        traceback.print_exc()
-                        result = None  # fail open - a model hiccup shouldn't silently break hands-free mode
-
-                    if result is not None and not result[0]:
-                        print(f"[handsfree] window rejected (score={result[1]:.3f})")
-                        return  # someone else is talking (or a false reject) - drop, keep any open turn as-is
-
-                    if result is not None:
-                        print(f"[handsfree] window accepted (score={result[1]:.3f}, rms={rms:.4f}) - forwarding")
 
                     if not hf_state["turn_active"]:
                         await sender.send_activity_start()

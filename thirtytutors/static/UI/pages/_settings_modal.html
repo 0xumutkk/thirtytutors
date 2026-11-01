@@ -89,11 +89,13 @@
           <button id="settingsRefreshMicsBtn" class="icon-btn" type="button" title="Refresh microphone list">&#8635;</button>
         </div>
 
+        <div hidden><!-- speaker verification is switched off - see live_session.py -->
         <button id="settingsRedoHandsfreeBtn" class="pill-btn" type="button" style="width:100%; margin-top:14px;">Redo hands-free setup</button>
         <p class="field-hint">Walks through mic calibration, voice enrollment, and the threshold test again for whichever mic is selected above.</p>
 
         <label class="field-label" style="margin-top:14px;">Mic status</label>
         <div id="settingsMicStatusList" class="mic-status-list"></div>
+        </div>
       </div>
 
       <div class="settings-pane" data-pane="learning" hidden>

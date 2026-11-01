@@ -406,12 +406,6 @@ document.addEventListener('keyup', (e) => {
 });
 
 // --- Hands-free mode button ---
-function handsFreeSetupDone() {
-  const micKey = currentProfile && (currentProfile.mic_label || '__default__');
-  const micCal = currentProfile && (currentProfile.mic_calibrations || {})[micKey];
-  return !!(micCal && micCal.calibrated && micCal.tested);
-}
-
 // live_session.py reads the mic's hands-free thresholds once, when the socket
 // connects - after a mic change they're stale until it reconnects. Push-to-talk
 // doesn't use them, so that only happens once hands-free is actually needed.
@@ -470,11 +464,9 @@ async function refreshMicAfterDeviceChange() {
     const usingText = `Microphone: ${nextLabel}.`;
     if (!wasHandsFree) {
       showError(fellBack ? `Your chosen microphone isn't available. ${usingText}` : usingText);
-    } else if (handsFreeSetupDone()) {
+    } else {
       reconnectForNewMic();
       showError(`${usingText} Hands-free paused - click it to continue.`);
-    } else {
-      showError(`${usingText} Hands-free paused - this microphone needs its setup first.`);
     }
   } catch (e) {
     console.error(e);
@@ -489,6 +481,10 @@ if (navigator.mediaDevices) {
     clearTimeout(micRefreshTimer);
     micRefreshTimer = setTimeout(refreshMicAfterDeviceChange, 500);
   });
+}
+
+function idleTalkHint() {
+  return handsFreeActive ? 'Listening - just talk' : 'Hold to speak';
 }
 
 // Single button, Zoom-style: mic icon (default) = muted, .live class (red,
@@ -518,12 +514,14 @@ async function setHandsFreeActive(active) {
     hfBufferedSamples = 0;
     handsFreeBtn.classList.add('live');
     handsFreeBtn.title = 'Hands-free listening (live - click to mute)';
+    talkHint.textContent = idleTalkHint();
     ws.send(JSON.stringify({ type: 'handsfree_start' }));
   } else {
     handsFreeActive = false;
     flushHfBuffer(true);
     handsFreeBtn.classList.remove('live');
     handsFreeBtn.title = 'Hands-free listening (muted - click to unmute)';
+    talkHint.textContent = idleTalkHint();
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'handsfree_stop' }));
     }
@@ -533,16 +531,6 @@ async function setHandsFreeActive(active) {
 handsFreeBtn.addEventListener('click', () => {
   if (quizActive) { showError('Finish or skip the quiz to use hands-free mode.'); return; }
   if (!handsFreeActive) {
-    // Gate on the hands-free-setup page (mic calibration + voice enrollment
-    // + per-mic threshold test) before ever opening a hands-free session -
-    // see handsfreeSetup.js. Calibration/threshold data lives per-mic in
-    // profile.mic_calibrations (keyed by mic label), so switching mics
-    // re-requires this page for the new mic while a previously-set-up mic
-    // can be switched back to without redoing anything.
-    if (!handsFreeSetupDone()) {
-      window.location.href = '/handsfree-setup';
-      return;
-    }
     if (socketMicKeyStale) {
       reconnectForNewMic();
       showError('Reconnecting for your new microphone - click hands-free again in a moment.');

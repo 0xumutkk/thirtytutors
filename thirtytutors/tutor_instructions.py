@@ -240,6 +240,14 @@ CORRECTION_GUARDRAILS = (
 )
 
 
+def _without_mood_rules(instruction: str) -> str:
+    """For when no avatar face exists to show a mood on (and so no set_mood
+    tool either) - each mood rule is one line, whichever rule set it's in."""
+    return "".join(
+        line for line in instruction.splitlines(keepends=True) if "set_mood" not in line or "trouble spot" in line
+    ).replace(", set_mood or any other tool", " or any other tool")
+
+
 def build_system_instruction(
     scenario_template: str,
     *,
@@ -255,6 +263,7 @@ def build_system_instruction(
     current_level: str | None = None,
     goal_level: str | None = None,
     target_only: bool = False,
+    mood_tool: bool = True,
 ) -> str:
     """Assembles the full Live API system_instruction string, in the exact
     order Gemini receives it - see this module's docstring for the order,
@@ -300,4 +309,7 @@ def build_system_instruction(
     if review_terms:
         parts.append(SPACED_REPETITION_CONTEXT_TEMPLATE.format(name=name, terms=", ".join(review_terms)))
     parts.append(guardrails.format(**fmt_kwargs))
-    return "".join(parts)
+    instruction = "".join(parts)
+    if not mood_tool:
+        instruction = _without_mood_rules(instruction)
+    return instruction
