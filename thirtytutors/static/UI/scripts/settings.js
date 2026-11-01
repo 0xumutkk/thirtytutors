@@ -108,7 +108,7 @@ async function openSettingsModal() {
   if (!currentProfile) return;
   selectSettingsCategory('general');
   settingsOverlay.classList.add('visible');
-  // Forces an immediate repaint - see profileDetail.js's openProfileDetail
+  // Forces an immediate repaint - see profileMenu.js's button handler
   // for the full explanation (a display:none -> flex toggle on a
   // position:fixed overlay wasn't reliably painting until something else
   // forced a recomposite).
@@ -275,10 +275,9 @@ settingsSaveLangfuseBtn.addEventListener('click', async () => {
 });
 
 // --- Voice & hands-free ---
-// Mic picker + "Default microphone" resolution mirrors profileDetail.js's
+// Mic picker + "Default microphone" resolution mirrors handsfreeSetup.js's
 // identical logic (kept as its own copy rather than shared code, since
-// that file's DOM elements only exist on /profiles - see its own header
-// comment for the same reasoning about profileDetail.js vs handsfreeSetup.js).
+// that file's DOM elements only exist on /handsfree-setup).
 
 function dedupeMicsByGroupSettings(mics) {
   const byGroup = new Map();
@@ -293,20 +292,6 @@ function dedupeMicsByGroupSettings(mics) {
   return Array.from(byGroup.values());
 }
 
-async function resolveAndPinDefaultMicSettings(mics, resolvedDefaultDeviceId) {
-  if (!resolvedDefaultDeviceId) return;
-  const resolved = mics.find((d) => d.deviceId === resolvedDefaultDeviceId);
-  if (!resolved) return;
-  currentProfile.mic_device_id = resolved.deviceId;
-  currentProfile.mic_label = resolved.label;
-  settingsMicSelect.value = resolved.deviceId;
-  await fetch(`/api/profiles/${currentProfile.id}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mic_device_id: resolved.deviceId, mic_label: resolved.label }),
-  }).catch(() => {});
-}
-
 async function loadMicsForSettings() {
   let tempStream;
   try {
@@ -314,27 +299,25 @@ async function loadMicsForSettings() {
   } catch (e) {
     return; // permission denied - dropdown just stays at "Default microphone"
   }
-  const resolvedDefaultDeviceId = tempStream.getAudioTracks()[0]?.getSettings().deviceId || null;
+  if (micIsAuto(currentProfile)) await syncProfileMicFromStream(currentProfile, tempStream);
   tempStream.getTracks().forEach((t) => t.stop());
 
   const devices = await navigator.mediaDevices.enumerateDevices();
   const mics = dedupeMicsByGroupSettings(devices.filter((d) => d.kind === 'audioinput'));
-  settingsMicSelect.innerHTML = '<option value="">Default microphone</option>';
+  settingsMicSelect.innerHTML = '<option value="">Automatic (system default)</option>';
   mics.forEach((d, i) => {
     const opt = document.createElement('option');
     opt.value = d.deviceId;
     opt.textContent = d.label || `Microphone ${i + 1}`;
     settingsMicSelect.appendChild(opt);
   });
-  if (currentProfile.mic_device_id && mics.some((d) => d.deviceId === currentProfile.mic_device_id)) {
+  if (micIsAuto(currentProfile)) {
+    settingsMicSelect.value = '';
+  } else if (mics.some((d) => d.deviceId === currentProfile.mic_device_id)) {
     settingsMicSelect.value = currentProfile.mic_device_id;
   } else if (currentProfile.mic_label) {
     const match = mics.find((d) => d.label === currentProfile.mic_label);
     if (match) settingsMicSelect.value = match.deviceId;
-  }
-
-  if (!currentProfile.mic_device_id) {
-    await resolveAndPinDefaultMicSettings(mics, resolvedDefaultDeviceId);
   }
 }
 
@@ -342,17 +325,13 @@ settingsRefreshMicsBtn.addEventListener('click', loadMicsForSettings);
 
 settingsMicSelect.addEventListener('change', async () => {
   if (!settingsMicSelect.value) {
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const mics = dedupeMicsByGroupSettings(devices.filter((d) => d.kind === 'audioinput'));
-    let tempStream;
-    try {
-      tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch (e) {
-      return;
-    }
-    const resolvedDefaultDeviceId = tempStream.getAudioTracks()[0]?.getSettings().deviceId || null;
-    tempStream.getTracks().forEach((t) => t.stop());
-    await resolveAndPinDefaultMicSettings(mics, resolvedDefaultDeviceId);
+    currentProfile.mic_auto = true;
+    await fetch(`/api/profiles/${currentProfile.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mic_auto: true }),
+    }).catch(() => {});
+    await loadMicsForSettings();
     return;
   }
   const selectedOption = settingsMicSelect.options[settingsMicSelect.selectedIndex];
@@ -360,10 +339,11 @@ settingsMicSelect.addEventListener('change', async () => {
   const mic_label = selectedOption.textContent;
   currentProfile.mic_device_id = mic_device_id;
   currentProfile.mic_label = mic_label;
+  currentProfile.mic_auto = false;
   fetch(`/api/profiles/${currentProfile.id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mic_device_id, mic_label }),
+    body: JSON.stringify({ mic_device_id, mic_label, mic_auto: false }),
   }).catch(() => {});
 });
 

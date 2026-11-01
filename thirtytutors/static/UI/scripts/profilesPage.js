@@ -1,5 +1,5 @@
 // ThirtyTutors - /profiles picker. Netflix-style tiles: click a profile to
-// open its detail modal (mic + languages, see profileDetail.js), add a
+// log in and go to its /home dashboard, add a
 // new one (hands off to /get-started), or import one from a backup zip
 // (see the Import profile section below).
 
@@ -10,12 +10,6 @@ async function fetchProfiles() {
   const res = await fetch('/api/profiles');
   const data = await res.json();
   return data.profiles;
-}
-
-async function fetchFullProfile(id) {
-  const res = await fetch(`/api/profiles/${id}`);
-  if (!res.ok) throw new Error('Profile not found');
-  return res.json();
 }
 
 async function deleteProfileApi(id) {
@@ -41,12 +35,9 @@ function buildProfileTile(profile, activeId) {
 
   selectBtn.appendChild(avatar);
   selectBtn.appendChild(name);
-  // The list endpoint only returns {id, name} - the detail modal needs the
-  // full record (api_key, mic_device_id, etc.), so fetch that on click
-  // rather than passing the shallow list entry straight through.
-  selectBtn.addEventListener('click', async () => {
-    const fullProfile = await fetchFullProfile(profile.id);
-    openProfileDetail(fullProfile);
+  selectBtn.addEventListener('click', () => {
+    localStorage.setItem(ACTIVE_PROFILE_KEY, profile.id);
+    window.location.href = '/home';
   });
 
   const delBtn = document.createElement('button');
@@ -192,15 +183,6 @@ async function render() {
     hint.id = 'profilesEmptyHint';
     hint.textContent = "No profiles yet - add one, or import a backup, to get started.";
     profileTiles.after(hint);
-  }
-
-  // Returning from avatar-select's Back button (via "+ Learn a new
-  // language" on a specific profile) should land back in that same
-  // profile's detail modal, not just the bare tile grid.
-  const openId = new URLSearchParams(window.location.search).get('open');
-  if (openId && profiles.some((p) => p.id === openId)) {
-    const fullProfile = await fetchFullProfile(openId);
-    openProfileDetail(fullProfile);
   }
 }
 

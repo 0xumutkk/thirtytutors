@@ -1,10 +1,10 @@
 // ThirtyTutors - current-profile bootstrap for the learning page.
 //
 // Everything related to switching profiles, API key, switching/adding
-// languages, microphone selection, and viewing notes now lives on the
-// dedicated /profiles page (see profilesPage.js and profileDetail.js) or
-// /get-started (API key, collected once at profile creation) - reachable
-// via the profile-switcher icon in the top bar. This file only ever loads
+// languages, microphone selection, and viewing notes now lives on
+// /profiles (see profilesPage.js), the /home dashboard (see home.js), the
+// Settings modal, or /get-started (API key, collected once at profile creation) - reachable
+// via the profile menu in the top bar. This file only ever loads
 // whichever profile/conversation was already chosen there.
 //
 // fetchProfile() is declared in profileMenu.js (loaded globally, before

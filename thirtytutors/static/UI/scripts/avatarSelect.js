@@ -7,11 +7,10 @@
 //  - New profile (no ?profile_id in the URL): came from /get-started,
 //    which stashed name/native_language/api_key/model_name in
 //    sessionStorage. Next creates the profile AND its first conversation.
-//  - Existing profile (?profile_id=<id> in the URL): came from "+ Learn a
-//    new language" in a profile's detail modal on /profiles. Next only
+//  - Existing profile (?profile_id=<id> in the URL): came from "+ New
+//    session" on the /home dashboard. Next only
 //    creates a new conversation under that profile - no profile fields to
-//    collect, and Back returns to /profiles (reopening that same profile's
-//    detail modal) rather than /get-started.
+//    collect, and Back returns to /home rather than /get-started.
 
 import { initAvatarHead, loadAvatarAndPlaySample, playGreeting, playPoseShowcase } from '/UI/scripts/avatarPreview.js';
 
@@ -180,21 +179,18 @@ function buildConversationName() {
 }
 
 backBtn.addEventListener('click', () => {
-  // Returning to a profile's detail modal (not just the bare /profiles
-  // list) needs the id passed along so that page knows to reopen it -
-  // see profilesPage.js's handling of ?open=.
-  const cameFrom = new URLSearchParams(window.location.search).get('from');
-  if (cameFrom === 'home') {
+  if (new URLSearchParams(window.location.search).get('from') === 'home') {
     window.location.href = '/';
     return;
   }
-  if (cameFrom === 'dashboard') {
-    window.location.href = '/home';
+  if (!existingProfileId) {
+    window.location.href = '/get-started';
     return;
   }
-  window.location.href = existingProfileId
-    ? `/profiles?open=${encodeURIComponent(existingProfileId)}`
-    : '/get-started';
+  // Onboarding gets here before any profile is logged in, and /home would
+  // otherwise bounce that on to /landing.
+  localStorage.setItem('tutorProfileId', existingProfileId);
+  window.location.href = '/home';
 });
 
 // --- Tutorial video popup ---

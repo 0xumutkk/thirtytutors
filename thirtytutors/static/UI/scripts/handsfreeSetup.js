@@ -51,7 +51,7 @@ let speechModelStatus = 'checking'; // 'checking' | 'loading' | 'ready' | 'faile
 let enrollmentSaved = false; // for the CURRENT mic - re-checked on every mic switch
 
 function currentMicName() {
-  if (!micSelect.value) return null;
+  if (!micSelect.value) return currentProfile.mic_label || null; // following the default - see micSelection.js
   return micSelect.options[micSelect.selectedIndex].textContent;
 }
 
@@ -115,8 +115,7 @@ function getUserMediaWithTimeout(constraints, timeoutMs = 12000) {
 function ensureMicReady() {
   if (micReadyPromise) return micReadyPromise;
   micReadyPromise = (async () => {
-    const constraints = currentProfile.mic_device_id ? { audio: { deviceId: { exact: currentProfile.mic_device_id } } } : { audio: true };
-    const stream = await getUserMediaWithTimeout(constraints);
+    const { stream } = await openProfileMic(currentProfile, getUserMediaWithTimeout);
     const context = new AudioContext({ sampleRate: 16000 });
     await context.audioWorklet.addModule('/pcm-processor.js');
     const source = context.createMediaStreamSource(stream);
@@ -234,58 +233,33 @@ async function loadMics() {
   } catch (e) {
     return;
   }
-  // Requesting audio:true with no deviceId constraint resolves to whatever
-  // the OS currently treats as the default input - reading it back off the
-  // resulting track (before we stop it) is how we resolve "Default
-  // microphone" to a concrete device instead of leaving it ambiguous. See
-  // resolveAndPinDefaultMic below for why this matters. This is a separate,
-  // quick, immediately-stopped probe - unrelated to the persistent
+  // A separate, quick, immediately-stopped probe - unrelated to the persistent
   // micSession above, which only opens once something actually needs to
-  // record.
-  const resolvedDefaultDeviceId = tempStream.getAudioTracks()[0]?.getSettings().deviceId || null;
+  // record. audio:true resolves to the OS default input.
+  if (micIsAuto(currentProfile)) {
+    const previousLabel = currentProfile.mic_label;
+    await syncProfileMicFromStream(currentProfile, tempStream);
+    if (currentProfile.mic_label !== previousLabel) teardownMicSession();
+  }
   tempStream.getTracks().forEach((t) => t.stop());
 
   const devices = await navigator.mediaDevices.enumerateDevices();
   const mics = dedupeMicsByGroup(devices.filter((d) => d.kind === 'audioinput'));
-  micSelect.innerHTML = '<option value="">Default microphone</option>';
+  micSelect.innerHTML = '<option value="">Automatic (system default)</option>';
   mics.forEach((d, i) => {
     const opt = document.createElement('option');
     opt.value = d.deviceId;
     opt.textContent = d.label || `Microphone ${i + 1}`;
     micSelect.appendChild(opt);
   });
-  if (currentProfile.mic_device_id && mics.some((d) => d.deviceId === currentProfile.mic_device_id)) {
+  if (micIsAuto(currentProfile)) {
+    micSelect.value = '';
+  } else if (mics.some((d) => d.deviceId === currentProfile.mic_device_id)) {
     micSelect.value = currentProfile.mic_device_id;
   } else if (currentProfile.mic_label) {
     const match = mics.find((d) => d.label === currentProfile.mic_label);
     if (match) micSelect.value = match.deviceId;
   }
-
-  if (!currentProfile.mic_device_id) {
-    await resolveAndPinDefaultMic(mics, resolvedDefaultDeviceId);
-  }
-}
-
-// "Default microphone" is convenient in the dropdown, but ambiguous as a
-// stored identity - see profileDetail.js's identical comment for the full
-// reasoning. Resolves "Default" to whatever concrete device it points to
-// right now and pins that as the profile's actual selection, so
-// mic_calibrations (keyed by mic label) never ends up split across a
-// generic placeholder and the same device's explicit entry.
-async function resolveAndPinDefaultMic(mics, resolvedDefaultDeviceId) {
-  if (!resolvedDefaultDeviceId) return;
-  const resolved = mics.find((d) => d.deviceId === resolvedDefaultDeviceId);
-  if (!resolved) return;
-
-  teardownMicSession(); // the persistent session (if any) was opened against a different device identity
-  currentProfile.mic_device_id = resolved.deviceId;
-  currentProfile.mic_label = resolved.label;
-  micSelect.value = resolved.deviceId;
-  await fetch(`/api/profiles/${currentProfile.id}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mic_device_id: resolved.deviceId, mic_label: resolved.label }),
-  }).catch(() => {});
 }
 
 // Windows exposes the same physical mic multiple times - once as the
@@ -311,19 +285,14 @@ refreshMicsBtn.addEventListener('click', loadMics);
 
 micSelect.addEventListener('change', async () => {
   if (!micSelect.value) {
-    // They explicitly picked "Default microphone" again - resolve it to a
-    // concrete device right away (see resolveAndPinDefaultMic's comment).
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const mics = dedupeMicsByGroup(devices.filter((d) => d.kind === 'audioinput'));
-    let tempStream;
-    try {
-      tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch (e) {
-      return;
-    }
-    const resolvedDefaultDeviceId = tempStream.getAudioTracks()[0]?.getSettings().deviceId || null;
-    tempStream.getTracks().forEach((t) => t.stop());
-    await resolveAndPinDefaultMic(mics, resolvedDefaultDeviceId);
+    teardownMicSession();
+    currentProfile.mic_auto = true;
+    await fetch(`/api/profiles/${currentProfile.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mic_auto: true }),
+    }).catch(() => {});
+    await loadMics();
     await refreshMicDependentUI();
     return;
   }
@@ -333,13 +302,22 @@ micSelect.addEventListener('change', async () => {
   const mic_label = selectedOption.textContent;
   currentProfile.mic_device_id = mic_device_id;
   currentProfile.mic_label = mic_label;
+  currentProfile.mic_auto = false;
   fetch(`/api/profiles/${currentProfile.id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mic_device_id, mic_label }),
+    body: JSON.stringify({ mic_device_id, mic_label, mic_auto: false }),
   }).catch(() => {});
   await refreshMicDependentUI();
 });
+
+if (navigator.mediaDevices) {
+  navigator.mediaDevices.addEventListener('devicechange', async () => {
+    if (!currentProfile) return;
+    await loadMics();
+    await refreshMicDependentUI();
+  });
+}
 
 // --- Mic calibration ---
 

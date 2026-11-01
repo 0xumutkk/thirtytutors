@@ -75,7 +75,7 @@ ThirtyTutors is built around the Gemini **Live API** specifically because it's f
 - **Stats & milestones** — a day streak, hours studied, and a per-language breakdown of words mastered, quiz accuracy, and perfect-quiz badges, with a notification the moment you cross a milestone
 - **Profile backup** — export one profile's full conversation/quiz history and voice enrollment as a single zip, and import it back later; optional scheduled automatic backups too
 - **Multiple profiles, multiple languages** — each profile can run several conversations at once, each with its own voice, language pair, difficulty, and scenario
-- **Home page & profile switching** — the app opens on a real home page every launch (your last-active profile stays logged in automatically), with a permanent profile-switcher icon and a profile menu for Settings/switching from anywhere
+- **Home page & profile switching** — the app opens on a real home page every launch (your last-active profile stays logged in automatically), with a profile menu for Settings/switching from anywhere
 - **Roleplay scenarios** — free conversation, ordering at a café, checking in at an airport, asking for directions, and more
 - **Three difficulty levels** — beginner, intermediate, advanced, adjustable per conversation
 - **Automatic model fallback** — if one Gemini model is unavailable, ThirtyTutors transparently retries on a second one

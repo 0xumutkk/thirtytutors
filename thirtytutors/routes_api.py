@@ -358,6 +358,7 @@ async def create_profile(request: Request):
         "langfuse_base_url": None,
         "mic_device_id": None,
         "mic_label": None,
+        "mic_auto": True,
         "voice_gender": next((v["gender"] for v in VOICE_OPTIONS if v["name"] == DEFAULT_VOICE), "Female"),
         # Starting point only - avatarSelect.js reads this back as the
         # default native_language/model_name when adding a new language to

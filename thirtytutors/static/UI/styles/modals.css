@@ -38,8 +38,7 @@
 }
 .secondary-btn:hover { border-color: var(--accent); color: var(--accent); }
 
-/* --- Voice enrollment rows (used on /landing and the profile detail
-   modal - see landing.js / profileDetail.js) --- */
+/* --- Voice enrollment rows --- */
 
 .enrollment-row {
   display: flex;

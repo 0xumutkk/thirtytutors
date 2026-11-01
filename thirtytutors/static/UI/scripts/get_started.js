@@ -2,11 +2,10 @@
 // mic calibration). The profile is now created HERE, the moment mic
 // calibration is first attempted (not deferred to /avatar-select as it
 // used to be) - calibration has to persist against a real profile id (see
-// calibrateMic below, same PUT /api/profiles/{id} pattern as
-// profileDetail.js's calibration), and forcing people to actually
+// calibrateMic below), and forcing people to actually
 // calibrate before they can start a session was the whole point of moving
 // this up. /avatar-select's existing "?profile_id=<id>" mode (originally
-// built for "+ Learn a new language" from a profile's detail modal) is
+// built for adding a new session to an existing profile) is
 // reused for the handoff here too, since by the time Next is clickable the
 // profile already exists - its own "create a brand new profile" branch
 // should now be unreachable from this page.
@@ -121,8 +120,8 @@ toggleApiKeyBtn.addEventListener('click', () => {
   toggleApiKeyBtn.textContent = showing ? '👁️' : '🙈';
 });
 
-// --- Microphone (ported from profileDetail.js's pattern - see that file
-// for dedupeMicsByGroup's fuller reasoning on Windows role-duplicate mics.
+// --- Microphone (same pattern as handsfreeSetup.js - see that file for
+// dedupeMicsByGroup's fuller reasoning on Windows role-duplicate mics.
 // Unlike there, this can run with NO profile yet: enumerating devices needs
 // no profile, only persisting a choice does (see micSelect's change
 // handler and calibrateMic below, both of which go through
@@ -155,7 +154,7 @@ async function loadMics() {
   const devices = await navigator.mediaDevices.enumerateDevices();
   const mics = dedupeMicsByGroup(devices.filter((d) => d.kind === 'audioinput'));
   const previousValue = micSelect.value;
-  micSelect.innerHTML = '<option value="">Default microphone</option>';
+  micSelect.innerHTML = '<option value="">Automatic (system default)</option>';
   mics.forEach((d, i) => {
     const opt = document.createElement('option');
     opt.value = d.deviceId;
@@ -259,9 +258,14 @@ async function ensureProfileCreated() {
   return profile;
 }
 
-// --- Mic calibration (ported from profileDetail.js's calibrateMic - see
-// that file for the fuller reasoning on the calibration approach itself;
-// only the profile-creation step at the top is new here) ---
+// --- Mic calibration ---
+// Measures ~2s of ambient room noise and derives a silence threshold from
+// it (noise floor RMS * a safety margin), stored per-mic in
+// profile.mic_calibrations so switching mics never overwrites another
+// mic's calibration. A mic that hasn't been opened yet can take several
+// seconds to deliver frames on Windows, so this waits for the first real
+// frame (with a safety cap) rather than a fixed delay, which could capture
+// zero samples and divide-by-zero into a NaN threshold.
 
 const CALIBRATION_SECONDS = 2;
 const CALIBRATION_MARGIN = 3; // ambient noise floor * this = the silence threshold
@@ -295,8 +299,9 @@ calibrateMicBtn.addEventListener('click', async () => {
   // (not read back off the profile) - there was no profile yet for the
   // dropdown's own change handler to have saved anything to.
   const selectedOption = micSelect.options[micSelect.selectedIndex];
-  const mic_device_id = micSelect.value || null;
-  const mic_label = mic_device_id ? selectedOption.textContent : null;
+  const mic_auto = !micSelect.value;
+  let mic_device_id = micSelect.value || null;
+  let mic_label = mic_device_id ? selectedOption.textContent : null;
 
   calibrateMicStatus.textContent = 'Stay quiet for a couple seconds...';
 
@@ -305,6 +310,12 @@ calibrateMicBtn.addEventListener('click', async () => {
   try {
     const constraints = mic_device_id ? { audio: { deviceId: { exact: mic_device_id } } } : { audio: true };
     stream = await navigator.mediaDevices.getUserMedia(constraints);
+    if (mic_auto) {
+      // Calibration is per physical mic - see micSelection.js.
+      const track = stream.getAudioTracks()[0];
+      mic_label = plainMicLabel(track.label) || null;
+      mic_device_id = track.getSettings().deviceId || null;
+    }
     context = new AudioContext({ sampleRate: 16000 });
     await context.audioWorklet.addModule('/pcm-processor.js');
     const source = context.createMediaStreamSource(stream);
@@ -345,10 +356,11 @@ calibrateMicBtn.addEventListener('click', async () => {
     await fetch(`/api/profiles/${profile.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mic_device_id, mic_label, mic_calibrations: calibrations }),
+      body: JSON.stringify({ mic_device_id, mic_label, mic_auto, mic_calibrations: calibrations }),
     });
     landingProfile.mic_device_id = mic_device_id;
     landingProfile.mic_label = mic_label;
+    landingProfile.mic_auto = mic_auto;
     landingProfile.mic_calibrations = calibrations;
     calibrated = true;
     saveDraft();

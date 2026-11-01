@@ -246,12 +246,10 @@ function ensureMicReady() {
 
   micReadyPromise = (async () => {
     micContext = new AudioContext({ sampleRate: 16000 });
-    // Mic choice is a profile-level setting, picked on /profiles (see
-    // profileDetail.js) rather than in a sidebar control here - so this
-    // reads straight from the loaded profile instead of a DOM element.
-    const deviceId = currentProfile && currentProfile.mic_device_id;
-    const constraints = deviceId ? { audio: { deviceId: { exact: deviceId } } } : { audio: true };
-    micStream = await getUserMediaWithTimeout(constraints);
+    // See micSelection.js for how the profile's mic is resolved.
+    const { stream, fellBack } = await openProfileMic(currentProfile, getUserMediaWithTimeout);
+    micStream = stream;
+    if (fellBack) showError(`Your chosen microphone isn't available - using ${currentProfile.mic_label}.`);
     await micContext.audioWorklet.addModule('/pcm-processor.js');
 
     const source = micContext.createMediaStreamSource(micStream);
@@ -374,6 +372,7 @@ function stopRecording() {
     pendingReplayChunks = []; // turn completed normally - nothing left to replay
   }
   talkHint.textContent = 'Waiting for reply...';
+  if (micRefreshPending) refreshMicAfterDeviceChange();
 }
 
 talkBtn.addEventListener('mousedown', startRecording);
@@ -407,6 +406,91 @@ document.addEventListener('keyup', (e) => {
 });
 
 // --- Hands-free mode button ---
+function handsFreeSetupDone() {
+  const micKey = currentProfile && (currentProfile.mic_label || '__default__');
+  const micCal = currentProfile && (currentProfile.mic_calibrations || {})[micKey];
+  return !!(micCal && micCal.calibrated && micCal.tested);
+}
+
+// live_session.py reads the mic's hands-free thresholds once, when the socket
+// connects - after a mic change they're stale until it reconnects. Push-to-talk
+// doesn't use them, so that only happens once hands-free is actually needed.
+let socketMicKeyStale = false;
+
+function reconnectForNewMic() {
+  socketMicKeyStale = false;
+  connectWebSocket();
+}
+
+// --- Following mic changes (headset plugged in or removed) ---
+
+let micRefreshPending = false;
+let micRefreshTimer = null;
+
+function teardownMic() {
+  if (micStream) micStream.getTracks().forEach((t) => t.stop());
+  if (micContext) micContext.close();
+  micStream = null;
+  micContext = null;
+  micAnalyser = null;
+  workletNode = null;
+  micReadyPromise = null;
+}
+
+function currentMicTrackLabel() {
+  const track = micStream && micStream.getAudioTracks()[0];
+  return track && track.readyState === 'live' ? plainMicLabel(track.label) : null;
+}
+
+async function refreshMicAfterDeviceChange() {
+  // Before the mic was first opened there's nothing to swap, and mid-turn the
+  // swap waits for release (stopRecording) so the turn isn't cut off.
+  if (!micReadyPromise || !currentProfile) return;
+  if (isRecording) {
+    micRefreshPending = true;
+    return;
+  }
+  micRefreshPending = false;
+  try {
+    await micReadyPromise;
+    // devicechange also fires for outputs and for inputs that aren't the one
+    // in use, so only rebuild if the mic would really be different.
+    const previousLabel = currentMicTrackLabel();
+    const { stream, fellBack } = await openProfileMic(currentProfile, getUserMediaWithTimeout);
+    const nextLabel = plainMicLabel(stream.getAudioTracks()[0]?.label);
+    stream.getTracks().forEach((t) => t.stop());
+    if (nextLabel === previousLabel) return;
+
+    const wasHandsFree = handsFreeActive;
+    if (wasHandsFree) await setHandsFreeActive(false);
+    teardownMic();
+    await ensureMicReady();
+    socketMicKeyStale = true;
+
+    const usingText = `Microphone: ${nextLabel}.`;
+    if (!wasHandsFree) {
+      showError(fellBack ? `Your chosen microphone isn't available. ${usingText}` : usingText);
+    } else if (handsFreeSetupDone()) {
+      reconnectForNewMic();
+      showError(`${usingText} Hands-free paused - click it to continue.`);
+    } else {
+      showError(`${usingText} Hands-free paused - this microphone needs its setup first.`);
+    }
+  } catch (e) {
+    console.error(e);
+    micReadyPromise = null; // the next press tries again
+    showError('Could not switch to the new microphone.');
+  }
+}
+
+if (navigator.mediaDevices) {
+  navigator.mediaDevices.addEventListener('devicechange', () => {
+    // Plugging in a headset fires several of these in a row.
+    clearTimeout(micRefreshTimer);
+    micRefreshTimer = setTimeout(refreshMicAfterDeviceChange, 500);
+  });
+}
+
 // Single button, Zoom-style: mic icon (default) = muted, .live class (red,
 // see base.css) = mic is open and streaming continuously. Default state on
 // entering the learning page is muted - hands-free only starts on an
@@ -455,11 +539,13 @@ handsFreeBtn.addEventListener('click', () => {
     // profile.mic_calibrations (keyed by mic label), so switching mics
     // re-requires this page for the new mic while a previously-set-up mic
     // can be switched back to without redoing anything.
-    const micKey = currentProfile && (currentProfile.mic_label || '__default__');
-    const micCal = currentProfile && (currentProfile.mic_calibrations || {})[micKey];
-    const setupDone = !!(micCal && micCal.calibrated && micCal.tested);
-    if (!setupDone) {
+    if (!handsFreeSetupDone()) {
       window.location.href = '/handsfree-setup';
+      return;
+    }
+    if (socketMicKeyStale) {
+      reconnectForNewMic();
+      showError('Reconnecting for your new microphone - click hands-free again in a moment.');
       return;
     }
   }

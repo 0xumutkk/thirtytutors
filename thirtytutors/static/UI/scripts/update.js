@@ -274,7 +274,7 @@ function openUpdateDetail() {
   updateDetailProgressWrap.hidden = true;
   updateDetailProgressFill.style.width = '0%';
   updateDetailOverlay.classList.add('visible');
-  // Forces an immediate repaint - see profileDetail.js's openProfileDetail
+  // Forces an immediate repaint - see profileMenu.js's button handler
   // for the full explanation of this same display:none/flex toggle glitch.
   void updateDetailOverlay.offsetHeight;
 }
@@ -465,7 +465,7 @@ async function loadMilestoneStatus() {
 updateBellBtn.addEventListener('click', (e) => {
   e.stopPropagation();
   updateBellDropdown.classList.toggle('visible');
-  // Forces an immediate repaint - see profileDetail.js's openProfileDetail
+  // Forces an immediate repaint - see profileMenu.js's button handler
   // for the full explanation of this same display:none/block toggle glitch.
   void updateBellDropdown.offsetHeight;
 });

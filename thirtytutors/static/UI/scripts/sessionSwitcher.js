@@ -1,7 +1,7 @@
 // ThirtyTutors - learning page's top-bar session switcher: lists this
 // profile's conversations so one can be resumed, or a new one started,
-// without going through /profiles. Switching reuses the same
-// active-conversation endpoint profileDetail.js does, then reloads, so the
+// without going through /home. Switching reuses the same
+// active-conversation endpoint home.js does, then reloads, so the
 // page's normal bootstrap (conversations.js) picks up the new one. New
 // sessions go through /avatar-select like everywhere else.
 

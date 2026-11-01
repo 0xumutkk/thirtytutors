@@ -31,7 +31,6 @@
   <div id="topbar">
     <div id="topbarLeft">
       {% block topbar_home %}<a id="homeLink" href="/home" class="icon-btn" title="Home">🏠</a>{% endblock %}
-      <a id="profileSwitcherLink" href="/profiles" class="icon-btn" title="Switch profile">👥</a>
       <h1 id="appTitle">{% block topbar_left_extra %}<span class="app-name-text">ThirtyTutors</span>{% endblock %}</h1>
     </div>
     <div id="topbarRight">
@@ -104,11 +103,12 @@
 {% block modals %}{% endblock %}
 <script src="/UI/scripts/theme.js?v=2"></script>
 <script src="/UI/scripts/update.js?v=3"></script>
+<script src="/UI/scripts/micSelection.js?v=1"></script>
 <script src="/UI/scripts/profileMenu.js?v=2"></script>
 <script src="/UI/scripts/statsPane.js?v=2"></script>
 <script src="/UI/scripts/languageAutocomplete.js?v=1"></script>
 <script src="/UI/scripts/notes.js?v=1"></script>
-<script src="/UI/scripts/settings.js?v=4"></script>
+<script src="/UI/scripts/settings.js?v=5"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

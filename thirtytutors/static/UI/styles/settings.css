@@ -66,7 +66,7 @@
 
 /* --- Settings modal shell: left category list + right content pane
    (not one long scrolling form - there's enough distinct grouping here
-   to earn the split, unlike the notes/profile-detail modals). --- */
+   to earn the split, unlike the notes modal). --- */
 
 #settingsOverlay {
   display: none;

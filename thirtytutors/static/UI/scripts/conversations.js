@@ -1,6 +1,6 @@
 // ThirtyTutors - loads the active conversation and connects the websocket
 // for it. Switching conversations or adding a new one happens in
-// sessionSwitcher.js or on /profiles (see profileDetail.js) - this only ever
+// sessionSwitcher.js or on the /home dashboard (see home.js) - this only ever
 // deals with "whichever conversation is currently active" for the loaded
 // profile.
 // Voice/model/language for that conversation are fixed at creation time

@@ -1,6 +1,6 @@
 // ThirtyTutors - Test Yourself ("quiz mode") page (/quiz-mode). Reached from
-// a conversation row's quiz icon on the profile detail modal
-// (profileDetail.js) - a deterministic, full-screen replay of every quiz
+// a session row's quiz icon on the /home dashboard
+// (home.js) - a deterministic, full-screen replay of every quiz
 // item already answered in that conversation, concatenated into one round.
 // No tutor/model involvement and no live websocket: this is a standalone
 // page, so slide rendering reuses quizRenderers.js/quizDragDrop.js (loaded
@@ -75,11 +75,10 @@ function isTypingTarget(el) {
 }
 
 function navigateAway() {
-  // Launched from a conversation row on the profile detail modal - closing
-  // returns there (reopened via ?open=, same convention avatarSelect.js's
-  // Back button already uses) rather than to the learning page, which
-  // isn't where this was reached from.
-  window.location.href = `/profiles?open=${encodeURIComponent(profileId)}`;
+  // Launched from a session row on the /home dashboard - closing returns
+  // there rather than to the learning page, which isn't where this was
+  // reached from.
+  window.location.href = '/home';
 }
 
 // --- Intro screen ---

@@ -1,10 +1,9 @@
 // ThirtyTutors - conversation notes modal (vocab/mistakes + lesson log).
-// Lives on the /profiles page now - each language row in the profile
-// detail modal (see profileDetail.js) has its own notes button, calling
-// openNotesModal(profileId, conversationId, label) for that conversation
-// specifically. No dependency on any "current" profile/conversation
-// globals, since /profiles doesn't track an active session the way the
-// learning page does.
+// Each session row on the /home dashboard (see home.js) has its own notes
+// button, calling openNotesModal(profileId, conversationId, label) for that
+// conversation specifically. No dependency on any "current"
+// profile/conversation globals, since /home doesn't track an active session
+// the way the learning page does.
 
 const notesModalOverlay = document.getElementById('notesModalOverlay');
 const notesModalSubtitle = document.getElementById('notesModalSubtitle');
@@ -38,7 +37,7 @@ async function openNotesModal(profileId, conversationId, label) {
   notesVocabList.innerHTML = '';
   notesLessonList.innerHTML = '';
   notesModalOverlay.classList.add('visible');
-  // Forces an immediate repaint - see profileDetail.js's openProfileDetail
+  // Forces an immediate repaint - see profileMenu.js's button handler
   // for the full explanation (a display:none -> flex toggle on a
   // position:fixed overlay wasn't reliably painting until something else
   // forced a recomposite).

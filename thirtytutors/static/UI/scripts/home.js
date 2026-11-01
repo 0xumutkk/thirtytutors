@@ -40,7 +40,7 @@ function homeSessionMeta(conv, scenarioLabels) {
   return parts.join(' · ');
 }
 
-// Same active-conversation switch as sessionSwitcher.js/profileDetail.js -
+// Same active-conversation switch as sessionSwitcher.js -
 // the learning page's normal bootstrap then picks it up.
 async function homeOpenSession(profileId, conversationId) {
   homeStatus.hidden = true;
@@ -105,7 +105,46 @@ function homeBuildSessionRow(profile, conv, isActive, scenarioLabels) {
   quizBtn.href = `/quiz-mode?profile_id=${encodeURIComponent(profile.id)}&conversation_id=${encodeURIComponent(conv.id)}`;
   row.appendChild(quizBtn);
 
+  const renameBtn = document.createElement('button');
+  renameBtn.type = 'button';
+  renameBtn.className = 'icon-btn';
+  renameBtn.title = 'Rename';
+  renameBtn.setAttribute('aria-label', `Rename ${name}`);
+  renameBtn.textContent = '✎';
+  renameBtn.addEventListener('click', () => {
+    const newName = prompt('Rename session', name);
+    if (newName === null || !newName.trim()) return;
+    homeChangeSession(profile, conv.id, 'PUT', { name: newName.trim() });
+  });
+  row.appendChild(renameBtn);
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.type = 'button';
+  deleteBtn.className = 'icon-btn';
+  deleteBtn.title = 'Delete';
+  deleteBtn.setAttribute('aria-label', `Delete ${name}`);
+  deleteBtn.textContent = '×';
+  deleteBtn.addEventListener('click', () => {
+    if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+    homeChangeSession(profile, conv.id, 'DELETE');
+  });
+  row.appendChild(deleteBtn);
+
   return row;
+}
+
+async function homeChangeSession(profile, conversationId, method, body) {
+  homeStatus.hidden = true;
+  const res = await fetch(`/api/profiles/${profile.id}/conversations/${conversationId}`, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined,
+  }).catch(() => null);
+  if (!res || !res.ok) {
+    homeShowError("Couldn't update that session - try again.");
+    return;
+  }
+  homeLoadData(profile);
 }
 
 function homeRenderSessions(profile, conversations, activeId, scenarioLabels) {
@@ -113,6 +152,7 @@ function homeRenderSessions(profile, conversations, activeId, scenarioLabels) {
   const resume = sorted.find((c) => c.id === activeId) || sorted[0];
 
   homeSessionList.innerHTML = '';
+  homeContinueBtn.hidden = !resume;
   if (!resume) {
     homeResumeText.textContent = 'Start your first session to see your progress here.';
     const empty = document.createElement('p');
@@ -123,8 +163,7 @@ function homeRenderSessions(profile, conversations, activeId, scenarioLabels) {
   }
 
   homeResumeText.textContent = `Pick up where you left off: ${homeSessionName(resume)}`;
-  homeContinueBtn.hidden = false;
-  homeContinueBtn.addEventListener('click', () => homeOpenSession(profile.id, resume.id));
+  homeContinueBtn.onclick = () => homeOpenSession(profile.id, resume.id);
   sorted.forEach((conv) => {
     homeSessionList.appendChild(homeBuildSessionRow(profile, conv, conv.id === resume.id, scenarioLabels));
   });
@@ -178,6 +217,29 @@ async function homeFetchJson(url) {
   return res.json();
 }
 
+async function homeLoadData(profile) {
+  // Each section loads on its own, so one failing still leaves the other usable.
+  homeFetchJson(`/api/profiles/${profile.id}/stats`)
+    .then(homeRenderStats)
+    .catch((e) => {
+      console.error(e);
+      homeShowError("Couldn't load your progress.");
+    });
+
+  try {
+    const [conversationData, scenarioData] = await Promise.all([
+      homeFetchJson(`/api/profiles/${profile.id}/conversations`),
+      homeFetchJson('/api/scenarios').catch(() => ({})),
+    ]);
+    const scenarioLabels = Object.fromEntries((scenarioData.scenarios || []).map((s) => [s.id, s.label]));
+    homeRenderSessions(profile, conversationData.conversations || [], conversationData.active_conversation_id, scenarioLabels);
+  } catch (e) {
+    console.error(e);
+    homeResumeText.textContent = '';
+    homeShowError("Couldn't load your sessions.");
+  }
+}
+
 async function initHome() {
   const savedId = localStorage.getItem('tutorProfileId');
   if (!savedId) {
@@ -200,32 +262,13 @@ async function initHome() {
   homeGreeting.textContent = `Welcome back, ${profile.name}`;
   homeRenderProfile(profile);
   homeNewSessionBtn.addEventListener('click', () => {
-    window.location.href = `/avatar-select?profile_id=${encodeURIComponent(profile.id)}&from=dashboard`;
+    window.location.href = `/avatar-select?profile_id=${encodeURIComponent(profile.id)}`;
   });
   homeEditProfileBtn.addEventListener('click', () => {
     if (typeof openSettingsModal === 'function') openSettingsModal();
   });
 
-  // Each section loads on its own, so one failing still leaves the other usable.
-  homeFetchJson(`/api/profiles/${profile.id}/stats`)
-    .then(homeRenderStats)
-    .catch((e) => {
-      console.error(e);
-      homeShowError("Couldn't load your progress.");
-    });
-
-  try {
-    const [conversationData, scenarioData] = await Promise.all([
-      homeFetchJson(`/api/profiles/${profile.id}/conversations`),
-      homeFetchJson('/api/scenarios').catch(() => ({})),
-    ]);
-    const scenarioLabels = Object.fromEntries((scenarioData.scenarios || []).map((s) => [s.id, s.label]));
-    homeRenderSessions(profile, conversationData.conversations || [], conversationData.active_conversation_id, scenarioLabels);
-  } catch (e) {
-    console.error(e);
-    homeResumeText.textContent = '';
-    homeShowError("Couldn't load your sessions.");
-  }
+  homeLoadData(profile);
 }
 
 initHome();

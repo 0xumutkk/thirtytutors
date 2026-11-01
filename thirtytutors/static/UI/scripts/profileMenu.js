@@ -63,8 +63,12 @@ profileMenuBtn.addEventListener('click', (e) => {
     return;
   }
   profileMenuDropdown.classList.toggle('visible');
-  // Forces an immediate repaint - see profileDetail.js's openProfileDetail
-  // for the full explanation of this same display:none/block toggle glitch.
+  // Forces an immediate repaint - a display:none -> block/flex change on an
+  // overlay or dropdown was observed not actually painting until some
+  // UNRELATED event forced the browser to recomposite the page: a
+  // paint-timing glitch, not a CSS logic bug (every computed style was
+  // already correct beforehand). Reading a layout property synchronously
+  // makes it happen now. Same fix in notes.js/settings.js/update.js.
   void profileMenuDropdown.offsetHeight;
 });
 document.addEventListener('click', (e) => {

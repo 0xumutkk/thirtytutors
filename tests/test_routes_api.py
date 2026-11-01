@@ -435,3 +435,18 @@ def test_create_conversation_drops_unset_or_invalid_learning_settings(client, ma
     ).json()
     for key in ("current_level", "goal_level", "explanation_mode"):
         assert key not in conv["config"]
+
+
+# --- Microphone selection ---
+
+
+def test_new_profile_follows_system_default_mic(client):
+    profile = client.post("/api/profiles", json={"name": "Alice", "api_key": "k"}).json()
+    assert profile["mic_auto"] is True
+
+
+def test_mic_auto_can_be_turned_off_and_back_on(client, make_profile):
+    profile = make_profile()
+    url = f"/api/profiles/{profile['id']}"
+    assert client.put(url, json={"mic_auto": False}).json()["mic_auto"] is False
+    assert client.put(url, json={"mic_auto": True}).json()["mic_auto"] is True

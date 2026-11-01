@@ -390,6 +390,7 @@ RELEASES_DIR = Path(__file__).resolve().parent / "releases"
 PROFILE_EDITABLE_FIELDS = (
     "mic_device_id",
     "mic_label",
+    "mic_auto",
     "voice_gender",
     "name",
     "native_language",
