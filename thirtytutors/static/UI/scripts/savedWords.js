@@ -8,7 +8,6 @@ const wordSheetTerm = document.getElementById('wordSheetTerm');
 const wordSheetMeaning = document.getElementById('wordSheetMeaning');
 const wordSheetSaveBtn = document.getElementById('wordSheetSaveBtn');
 const savedWordsQuizLink = document.getElementById('savedWordsQuizLink');
-const wordSheetHearBtn = document.getElementById('wordSheetHearBtn');
 const wordSheetCloseBtn = document.getElementById('wordSheetCloseBtn');
 const savedWordsOverlay = document.getElementById('savedWordsOverlay');
 const savedWordsList = document.getElementById('savedWordsList');
@@ -63,16 +62,45 @@ function caretAt(x, y) {
   return null;
 }
 
-function wordAt(x, y) {
+function wordRangeAt(x, y) {
   const caret = caretAt(x, y);
-  if (!caret || caret.node.nodeType !== Node.TEXT_NODE) return '';
+  if (!caret || caret.node.nodeType !== Node.TEXT_NODE) return null;
   const text = caret.node.textContent;
   const isWordChar = (ch) => ch && /[\p{L}\p{N}'’-]/u.test(ch);
   let start = caret.offset;
   let end = caret.offset;
   while (start > 0 && isWordChar(text[start - 1])) start--;
   while (end < text.length && isWordChar(text[end])) end++;
-  return cleanTerm(text.slice(start, end));
+  if (start === end) return null;
+  const range = document.createRange();
+  range.setStart(caret.node, start);
+  range.setEnd(caret.node, end);
+  return range;
+}
+
+// The dashed oval around the tapped word. A span in the bubble's text, so it
+// moves with scrolling; if the reply is still streaming, new text replaces it.
+let wordMark = null;
+
+function clearWordMark() {
+  if (!wordMark) return;
+  const parent = wordMark.parentNode;
+  if (parent) {
+    wordMark.replaceWith(...wordMark.childNodes);
+    parent.normalize();
+  }
+  wordMark = null;
+}
+
+function markWord(range) {
+  const mark = document.createElement('span');
+  mark.className = 'word-mark';
+  try {
+    range.surroundContents(mark);
+    wordMark = mark;
+  } catch (e) {
+    /* a selection crossing other elements just goes unmarked */
+  }
 }
 
 function openWordSheet(term, context) {
@@ -111,20 +139,27 @@ async function showWordMeaning(selection) {
 function closeWordSheet() {
   wordSheet.classList.remove('visible');
   sheetSelection = null;
+  clearWordMark();
 }
 
 transcriptArea.addEventListener('click', (e) => {
   const textEl = e.target.closest('.bubble-text');
   if (!textEl) return;
+  clearWordMark(); // first, so the positions below are in the plain text
   const selected = window.getSelection();
-  const selectedText = selected && !selected.isCollapsed && textEl.contains(selected.anchorNode) ? cleanTerm(selected.toString()) : '';
-  const term = selectedText || wordAt(e.clientX, e.clientY);
-  if (term) openWordSheet(term, textEl.textContent);
+  const hasSelection = selected && !selected.isCollapsed && textEl.contains(selected.anchorNode);
+  const range = hasSelection ? selected.getRangeAt(0) : wordRangeAt(e.clientX, e.clientY);
+  const term = range ? cleanTerm(range.toString()) : '';
+  if (!term) {
+    closeWordSheet();
+    return;
+  }
+  const context = textEl.textContent;
+  markWord(range);
+  if (hasSelection) selected.removeAllRanges();
+  openWordSheet(term, context);
 });
 
-wordSheetHearBtn.addEventListener('click', () => {
-  if (sheetSelection) speakText(sheetSelection.term);
-});
 wordSheetCloseBtn.addEventListener('click', closeWordSheet);
 
 wordSheetSaveBtn.addEventListener('click', async () => {

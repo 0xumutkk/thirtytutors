@@ -326,3 +326,11 @@
   font-variant-numeric: tabular-nums;
 }
 #examTimer.ending #examTimerClock { color: var(--accent); }
+
+.word-mark {
+  /* An outline, not a border: taking up no space, adding or removing it can't
+     shift the text under the next tap. */
+  outline: 1.5px dashed var(--accent);
+  outline-offset: 3px;
+  border-radius: 999px;
+}
