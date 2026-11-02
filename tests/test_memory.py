@@ -482,6 +482,18 @@ def test_saved_words_are_per_profile_and_not_duplicated():
     assert len(memory.get_saved_words("p2")) == 1
 
 
+def test_words_to_practice_stay_in_the_language_and_rotate():
+    english = memory.create_conversation("p1", {"target_language": "English"})
+    spanish = memory.create_conversation("p1", {"target_language": "Spanish"})
+    memory.add_saved_word("p1", "hola", conversation_id=spanish["id"])
+    memory.add_saved_word("p1", "earn", conversation_id=english["id"])
+    memory.add_saved_word("p1", "keen", conversation_id=english["id"])
+    assert {w["term"] for w in memory.get_words_to_practice(english["id"])} == {"earn", "keen"}
+    first = memory.get_words_to_practice(english["id"])[0]["term"]
+    memory.record_saved_word_practice(english["id"], first, True)
+    assert memory.get_words_to_practice(english["id"])[0]["term"] != first
+
+
 def test_saved_word_is_only_deleted_by_its_profile():
     word = memory.add_saved_word("p1", "earn money")
     assert memory.delete_saved_word("p2", word["id"]) is False

@@ -132,7 +132,7 @@ from .constants import (
 )
 from .profiles_store import get_client_for_key, get_profile_by_id, patch_profile
 from .summarization import summarize_conversation
-from .tutor_instructions import build_system_instruction
+from .tutor_instructions import SAVED_WORDS_UPDATE_TEMPLATE, build_system_instruction, format_saved_words
 from .tutor_tools import (
     EXAM_TIMER_SECONDS,
     EXAM_TIMER_TOOL,
@@ -280,6 +280,7 @@ def build_config(
     summary_text: str | None = None,
     review_terms: list[str] | None = None,
     taught_vocab: list[str] | None = None,
+    saved_words: list[dict] | None = None,
 ) -> types.LiveConnectConfig:
     name = profile.get("name") or "the student"
     native_language = conv_config.get("native_language") or DEFAULT_NATIVE_LANGUAGE
@@ -311,6 +312,7 @@ def build_config(
         summary_text=summary_text,
         review_terms=review_terms,
         taught_vocab=taught_vocab,
+        saved_words=saved_words,
         correction_loop=correction_loop,
         current_level=conv_config.get("current_level"),
         goal_level=conv_config.get("goal_level"),
@@ -689,6 +691,7 @@ async def _connect_live_session_with_fallback(
     function - so a person can inspect exactly what context was re-injected
     at each reconnect, not just at session start.
     """
+    saved_words = memory.get_words_to_practice(conv["id"], SAVED_WORDS_IN_CONTEXT) if conv else []
     config = build_config(
         profile,
         conv_config,
@@ -697,6 +700,7 @@ async def _connect_live_session_with_fallback(
         summary_text=summary_text,
         review_terms=review_terms,
         taught_vocab=taught_vocab,
+        saved_words=saved_words,
     )
     with observability.span(
         "session_connect",
@@ -736,6 +740,7 @@ async def _connect_live_session_with_fallback(
                 summary_text=summary_text,
                 review_terms=review_terms,
                 taught_vocab=taught_vocab,
+                saved_words=saved_words,
             )
             try:
                 live_cm, live_session, handle_was_dropped = await _connect_live_with_retries(client, model_name, config)
@@ -779,6 +784,7 @@ async def _connect_live_session_with_fallback(
         "conv_config": conv_config,
         "config_identity": dict(conv_config),
         "resumption_handle": resumption_handle,
+        "saved_words": saved_words,
     }
 
 
@@ -806,6 +812,43 @@ def _connect_failure_payload(exc: Exception, fallback_message: str) -> dict:
 
 
 SAVED_WORDS_IN_CONTEXT = 20
+SAVED_WORDS_PER_QUIZ = 2
+
+
+def _with_saved_word_items(conv: dict, payload: dict) -> dict:
+    """Adds saved words the tutor's own quiz left out, so they turn up in every
+    quiz however closely the model followed its instructions."""
+    items = payload.get("items") or []
+    used = [str(item.get("target_term") or "").strip() for item in items if isinstance(item, dict)]
+    extra = quizzes.build_saved_word_items(
+        memory.get_words_to_practice(conv["id"], SAVED_WORDS_IN_CONTEXT),
+        used + memory.get_taught_vocab(conv["id"]),
+        {term.casefold() for term in used},
+    )
+    return {**payload, "items": items + extra[:SAVED_WORDS_PER_QUIZ]}
+
+
+async def _tell_tutor_new_saved_words(sender: "ResumableSender", profile: dict, conv: dict | None, told: set[str]) -> None:
+    """Puts saved words the open Gemini session hasn't heard about yet into its
+    context, without asking it to reply: turn_complete=True would interrupt it."""
+    if conv is None or (conv.get("config") or {}).get("scenario") in scenarios.EXAM_SCENARIOS:
+        return
+    words = memory.get_words_to_practice(conv["id"], SAVED_WORDS_IN_CONTEXT)
+    new_words = [word for word in words if word["term"].casefold() not in told]
+    if not new_words:
+        return
+    note = SAVED_WORDS_UPDATE_TEMPLATE.format(
+        name=profile.get("name") or "the student", terms=format_saved_words(new_words)
+    )
+    try:
+        await sender.send_client_content(
+            turns=types.Content(role="user", parts=[types.Part(text=note)]),
+            turn_complete=False,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"[ws_session] saved words update failed: {type(exc).__name__}: {exc}")
+        return
+    told.update(word["term"].casefold() for word in new_words)
 
 
 def _refresh_conversation_memory_context(conv: dict, config_identity: dict) -> tuple:
@@ -850,14 +893,7 @@ def _refresh_conversation_memory_context(conv: dict, config_identity: dict) -> t
     )
     summary_row = memory.get_summary(conv["id"])
     summary_text = summary_row["summary"] if summary_row else None
-    # Words the student saved count as trouble spots, so lessons and quizzes
-    # bring them back. Like the rest of this context, only a fresh Gemini
-    # session reads it, not one resumed through a handle.
     review_terms = memory.get_review_candidates(conv["id"])
-    known = {term.lower() for term in review_terms}
-    for word in memory.get_saved_words(conv["profile_id"], limit=SAVED_WORDS_IN_CONTEXT):
-        if word["term"].lower() not in known:
-            review_terms.append(word["term"])
     taught_vocab = memory.get_taught_vocab(conv["id"])
     return conv, resumption_handle, summary_text, review_terms, taught_vocab
 
@@ -1050,6 +1086,12 @@ async def ws_session(websocket: WebSocket):
         print(f"[ws_session] session_resumption handle for conversation={conv['id']!r} was rejected as dead - cleared.")
 
     resumed = resumption_handle is not None and not handle_was_dropped
+    # A resumed session keeps the instruction it started with, so it hears
+    # about saved words separately; a fresh one just read them all.
+    saved_words_told: set[str] = set()
+    if not resumed:
+        saved_words_told.update(word["term"].casefold() for word in connect_result["saved_words"])
+    await _tell_tutor_new_saved_words(sender, profile, conv, saved_words_told)
     try:
         await websocket.send_json(
             {
@@ -1360,6 +1402,8 @@ async def ws_session(websocket: WebSocket):
                                     )
                                 except Exception as e:  # noqa: BLE001
                                     print(f"[browser_to_live] quiz skip injection failed: {type(e).__name__}: {e}")
+                            elif msg_type == "word_saved":
+                                await _tell_tutor_new_saved_words(sender, profile, conv, saved_words_told)
                             elif msg_type == "exam_time_up":
                                 exam_state["preparing"] = False
                                 message = _EXAM_TIME_UP_MESSAGES.get(msg.get("phase"))
@@ -1500,7 +1544,7 @@ async def ws_session(websocket: WebSocket):
                                             quiz_id = existing["quiz_id"]
                                             payload = existing["payload"]
                                         else:
-                                            payload = dict(fc.args or {})
+                                            payload = _with_saved_word_items(conv, dict(fc.args or {}))
                                             items = payload.get("items") or []
                                             _validate_quiz_items(items)
                                             quiz_id = quizzes.start_quiz_session(
@@ -1780,6 +1824,10 @@ async def ws_session(websocket: WebSocket):
                 config_identity = connect_result["config_identity"]
                 resumption_handle = connect_result["resumption_handle"]
                 resumed = resumption_handle is not None and not handle_was_dropped
+                if not resumed:
+                    saved_words_told.clear()
+                    saved_words_told.update(word["term"].casefold() for word in connect_result["saved_words"])
+                await _tell_tutor_new_saved_words(sender, profile, conv, saved_words_told)
                 hf_state["turn_active"] = False  # the new Gemini session has no open turn from the old one
                 if turn_state["awaiting_response"]:
                     # A turn was still outstanding when the old session died

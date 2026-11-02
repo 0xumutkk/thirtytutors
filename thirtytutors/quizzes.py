@@ -22,7 +22,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from .constants import DATA_DIR
-from .memory import record_term_review
+from .memory import record_saved_word_practice, record_term_review
 
 DB_FILE = DATA_DIR / "memory.db"
 
@@ -138,6 +138,7 @@ def record_item_answer(
         conn.close()
     if conversation_id:
         record_term_review(conversation_id, target_term, is_correct)
+        record_saved_word_practice(conversation_id, target_term, is_correct)
 
 
 def get_quiz_conversation_id(quiz_id: str) -> str | None:

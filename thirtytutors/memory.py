@@ -132,6 +132,8 @@ def init_db() -> None:
               meaning TEXT,
               conversation_id TEXT,
               created_ts INTEGER NOT NULL,
+              correct_streak INTEGER NOT NULL DEFAULT 0,
+              last_practiced_ts INTEGER,
               UNIQUE (profile_id, term)
             );
 
@@ -192,11 +194,12 @@ def init_db() -> None:
             except sqlite3.OperationalError as e:
                 if "duplicate column" not in str(e).lower():
                     raise
-        try:
-            conn.execute("ALTER TABLE saved_words ADD COLUMN meaning TEXT")
-        except sqlite3.OperationalError as e:
-            if "duplicate column" not in str(e).lower():
-                raise
+        for column in ("meaning TEXT", "correct_streak INTEGER NOT NULL DEFAULT 0", "last_practiced_ts INTEGER"):
+            try:
+                conn.execute(f"ALTER TABLE saved_words ADD COLUMN {column}")
+            except sqlite3.OperationalError as e:
+                if "duplicate column" not in str(e).lower():
+                    raise
         conn.commit()
     finally:
         conn.close()
@@ -794,6 +797,61 @@ def get_saved_words(profile_id: str, limit: int = 1000) -> list[dict]:
             (profile_id, limit),
         ).fetchall()
         return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_words_to_practice(conversation_id: str, limit: int = 1000) -> list[dict]:
+    """The profile's saved words that belong in this conversation's lessons:
+    those saved in a conversation on the same language, plus any whose
+    conversation is gone. Least secure and longest unpractised first, so the
+    selection rotates instead of always being the newest words."""
+    conv = get_conversation(conversation_id)
+    if conv is None:
+        return []
+    target_language = (conv.get("config") or {}).get("target_language")
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            "SELECT s.id, s.term, s.context, s.meaning, s.conversation_id, s.created_ts, c.config_json "
+            "FROM saved_words s LEFT JOIN conversations c ON c.id = s.conversation_id "
+            "WHERE s.profile_id=? "
+            "ORDER BY s.correct_streak ASC, COALESCE(s.last_practiced_ts, 0) ASC, s.created_ts DESC, s.id DESC",
+            (conv["profile_id"],),
+        ).fetchall()
+    finally:
+        conn.close()
+    words = []
+    for row in rows:
+        word = dict(row)
+        config_json = word.pop("config_json")
+        if config_json is None or json.loads(config_json).get("target_language") == target_language:
+            words.append(word)
+    return words[:limit]
+
+
+def record_saved_word_practice(conversation_id: str, term: str, correct: bool) -> None:
+    """Notes a quiz answer on a word, if the conversation's profile saved it."""
+    conn = _connect()
+    try:
+        conn.execute(
+            "UPDATE saved_words SET last_practiced_ts=?, correct_streak=CASE WHEN ? THEN correct_streak+1 ELSE 0 END "
+            "WHERE term=? AND profile_id=(SELECT profile_id FROM conversations WHERE id=?)",
+            (int(time.time()), correct, (term or "").strip(), conversation_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def set_saved_word_meaning(profile_id: str, word_id: int, meaning: str) -> None:
+    conn = _connect()
+    try:
+        conn.execute(
+            "UPDATE saved_words SET meaning=COALESCE(meaning, ?) WHERE profile_id=? AND id=?",
+            (meaning, profile_id, word_id),
+        )
+        conn.commit()
     finally:
         conn.close()
 

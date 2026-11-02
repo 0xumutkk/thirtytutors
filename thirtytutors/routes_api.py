@@ -685,15 +685,53 @@ MAX_SPOKEN_TEXT_LENGTH = 2000
 
 
 @router.get("/api/profiles/{profile_id}/saved-words")
-def list_saved_words(profile_id: str):
+async def list_saved_words(profile_id: str):
     if get_profile_by_id(profile_id) is None:
         raise HTTPException(404, "Profile not found")
-    return {"words": memory.get_saved_words(profile_id)}
+    words = memory.get_saved_words(profile_id)
+    _schedule_missing_meanings(get_profile_by_id(profile_id), words)
+    return {"words": words}
+
+
+_meanings_in_progress: set[int] = set()
+MEANINGS_FILLED_PER_REQUEST = 5
+
+
+async def _fill_missing_meanings(profile: dict, words: list[dict]) -> None:
+    """A word saved before its meaning came back has none, and quizzes and the
+    tutor need one. Best-effort: the next load of the list tries again."""
+    for word in words:
+        conv = memory.get_conversation(word.get("conversation_id") or "")
+        if conv is None:
+            continue
+        try:
+            meaning = await asyncio.to_thread(
+                word_help.explain_word,
+                profile.get("api_key"),
+                word["term"],
+                word.get("context"),
+                word_help.explanation_language(conv.get("config") or {}),
+            )
+            if meaning:
+                memory.set_saved_word_meaning(profile["id"], word["id"], meaning[:MAX_SAVED_MEANING_LENGTH])
+        except Exception as e:  # noqa: BLE001
+            print(f"[saved_words] meaning failed: {type(e).__name__}")
+        finally:
+            _meanings_in_progress.discard(word["id"])
+
+
+def _schedule_missing_meanings(profile: dict, words: list[dict]) -> None:
+    missing = [w for w in words if not w.get("meaning") and w["id"] not in _meanings_in_progress]
+    missing = missing[:MEANINGS_FILLED_PER_REQUEST]
+    if missing:
+        _meanings_in_progress.update(w["id"] for w in missing)
+        asyncio.create_task(_fill_missing_meanings(profile, missing))
 
 
 @router.post("/api/profiles/{profile_id}/saved-words")
 async def save_word(profile_id: str, request: Request):
-    if get_profile_by_id(profile_id) is None:
+    profile = get_profile_by_id(profile_id)
+    if profile is None:
         raise HTTPException(404, "Profile not found")
     payload = await request.json()
     term = str(payload.get("term") or "").strip()
@@ -705,7 +743,9 @@ async def save_word(profile_id: str, request: Request):
     conv = memory.get_conversation(conversation_id) if conversation_id else None
     if conv is None or conv["profile_id"] != profile_id:
         conversation_id = None
-    return memory.add_saved_word(profile_id, term, context, conversation_id, meaning)
+    word = memory.add_saved_word(profile_id, term, context, conversation_id, meaning)
+    _schedule_missing_meanings(profile, [word])
+    return word
 
 
 @router.post("/api/profiles/{profile_id}/conversations/{conversation_id}/speak")
@@ -957,7 +997,7 @@ def get_reviewable_quiz_endpoint(profile_id: str, conversation_id: str, range: s
         raise HTTPException(400, f"range must be one of: {', '.join(_REVIEWABLE_QUIZ_RANGES)}")
     items = quizzes.get_reviewable_quiz_items(conversation_id, range)
     items += quizzes.build_saved_word_items(
-        memory.get_saved_words(profile_id),
+        memory.get_words_to_practice(conversation_id),
         memory.get_taught_vocab(conversation_id),
         {(item.get("target_term") or "").strip().casefold() for item in items},
         range,

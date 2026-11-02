@@ -1394,14 +1394,50 @@ def test_handsfree_forwards_speech_and_closes_turn_on_silence_without_any_setup(
     assert sent_keys == ["activity_start", "audio", "activity_end"]
 
 
-def test_saved_words_join_the_review_terms(make_profile, make_conversation):
+def test_saved_words_reach_a_fresh_session_with_meanings_and_leave_trouble_spots(make_profile, make_conversation):
     profile = make_profile(api_key="fake-key")
     conv = make_conversation(profile["id"], target_language="English")
     memory.record_term_review(conv["id"], "earn money", correct=False)
-    memory.add_saved_word(profile["id"], "Earn Money")
-    memory.add_saved_word(profile["id"], "reluctant")
-    _, _, _, review_terms, _ = live_session._refresh_conversation_memory_context(conv, conv["config"])
-    assert sorted(review_terms) == ["earn money", "reluctant"]
+    memory.record_term_review(conv["id"], "went", correct=False)
+    memory.add_saved_word(profile["id"], "Earn Money", meaning="kazanmak", conversation_id=conv["id"])
+    words = memory.get_words_to_practice(conv["id"])
+    config = live_session.build_config(
+        profile, conv["config"], "m", review_terms=["earn money", "went"], saved_words=words
+    )
+    assert "Earn Money (kazanmak)" in config.system_instruction
+    assert "Trouble spots for" in config.system_instruction
+    assert "so far: went" in config.system_instruction
+
+
+def test_word_saved_goes_quietly_into_an_open_session(ws_app, make_profile, make_conversation):
+    profile = make_profile(api_key="fake-key")
+    conv = make_conversation(profile["id"], target_language="English")
+    memory.add_saved_word(profile["id"], "eager", conversation_id=conv["id"])  # already in a fresh session's instruction
+    fake_session = FakeLiveSession(responses=[])
+    client = ws_app(fake_session)
+    with client.websocket_connect("/ws/session") as ws:
+        ws.send_json({"type": "init", "profile_id": profile["id"], "profile_name": profile["name"], "conversation_id": conv["id"]})
+        ws.receive_json()
+        memory.add_saved_word(profile["id"], "reluctant", meaning="isteksiz", conversation_id=conv["id"])
+        ws.send_json({"type": "word_saved"})
+        ws.send_json({"type": "word_saved"})
+        ws.send_json({"type": "close"})
+    assert len(fake_session.sent_client_contents) == 1
+    sent = fake_session.sent_client_contents[0]
+    assert sent["turn_complete"] is False
+    assert "reluctant (isteksiz)" in sent["turns"].parts[0].text
+    assert "eager" not in sent["turns"].parts[0].text
+
+
+def test_tutor_quiz_always_gets_saved_words_it_left_out(make_profile, make_conversation):
+    profile = make_profile(api_key="fake-key")
+    conv = make_conversation(profile["id"], target_language="English")
+    for term in ("reluctant", "eager", "keen"):
+        memory.add_saved_word(profile["id"], term, f"She was {term} to go.", conv["id"])
+    tutor_item = {"target_term": "eager", "question": "q", "item_type": "multiple_choice"}
+    items = live_session._with_saved_word_items(conv, {"items": [tutor_item]})["items"]
+    assert items[0] is tutor_item
+    assert sorted(i["target_term"] for i in items[1:]) == ["keen", "reluctant"]
 
 
 def test_interrupted_is_forwarded_so_a_stopped_reply_can_unmute(ws_app, make_profile, make_conversation):

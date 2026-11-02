@@ -36,7 +36,8 @@ Assembly order (mirrors build_system_instruction below):
     4.   [memory context]      - MEMORY_CONTEXT_TEMPLATE, only on a fresh session with a stored summary
     5.   [taught vocabulary]   - TAUGHT_VOCAB_CONTEXT_TEMPLATE, only when the conversation has taught vocab on record
     6.   [trouble spots]       - SPACED_REPETITION_CONTEXT_TEMPLATE, only when review terms exist
-    7. # GUARDRAILS        - GUARDRAILS (every prohibition, consolidated, always last)
+    7.   [saved words]         - SAVED_WORDS_CONTEXT_TEMPLATE, only when the student has saved words
+    8. # GUARDRAILS        - GUARDRAILS (every prohibition, consolidated, always last)
 """
 
 from .constants import DEFAULT_DIFFICULTY
@@ -162,6 +163,24 @@ TAUGHT_VOCAB_CONTEXT_TEMPLATE = (
 # a row since. CONVERSATIONAL_RULES rule 4 tells the tutor how to use this.
 SPACED_REPETITION_CONTEXT_TEMPLATE = "\n\nTrouble spots for {name} so far: {terms}"
 
+# Words the student picked out of the dialogue, most in need of practice
+# first. Separate from trouble spots because these are a stated wish to learn
+# them, so they apply even where the rules above favour new vocabulary.
+SAVED_WORDS_CONTEXT_TEMPLATE = (
+    "\n\nWords {name} saved to learn, with their meanings: {terms}\n"
+    "Practice these actively, even if already taught: every few turns, work one into what you are talking about, "
+    "either by using it yourself or by asking something {name} can answer with it, starting from the first on the list. "
+    "Include at least 2 of them in every start_quiz."
+)
+
+# Sent mid-session for a session whose system instruction can't change: one
+# resumed from a handle, or a word saved while the lesson is open.
+SAVED_WORDS_UPDATE_TEMPLATE = (
+    "(Lesson note, not something {name} said; don't reply to it or mention it.) {name} also saved these words to learn, "
+    "with their meanings: {terms}. Practice them actively: every few turns, work one into what you are talking about, "
+    "and include at least 2 saved words in every start_quiz."
+)
+
 # The single # GUARDRAILS section for the whole system instruction -
 # every prohibition, from every rule above, consolidated in one place at
 # the very end, rather than scattered through the rules that motivate
@@ -180,7 +199,7 @@ GUARDRAILS = (
     "- HARD RULE: NEVER combine a correction, a repetition prompt, and a new question in one response.\n"
     "- HARD RULE: NEVER send more than one exchange per response.\n"
     "- HARD RULE: QUIZ AND REPETITION ARE MUTUALLY EXCLUSIVE. If starting a quiz, start only the quiz tell {name} its time for a quiz, and stop. If asking {name} to repeat something, ask only for repetition and stop.\n"
-    "- HARD RULE: NEVER quiz vocabulary {name} has not used or been taught in this conversation.\n"
+    "- HARD RULE: NEVER quiz vocabulary {name} has not used, saved, or been taught in this conversation.\n"
     "- HARD RULE: Before calling start_quiz, verify that correct_answers contains exactly one entry for every blank in text_with_blanks, and that each entry exactly matches its corresponding word_bank entry.\n"
     "- HARD RULE: Always shuffle word_bank. NEVER put answers in correct-answer order.\n"
     "- HARD RULE: start_quiz's question MUST be entirely in {native_language}, MUST NOT use {target_language}, and MUST NOT reveal the target answer. start_quiz's choices Must be entirely in {target_language}.\n"
@@ -218,7 +237,7 @@ CORRECTION_RULES = (
     "5. **Keep {name} talking:** Keep your own turns short and end them with something {name} can answer in more than a few words.\n"
     "6. **Revisit trouble spots:** If trouble spots are listed below, steer the conversation so {name} has a natural reason to use them.\n"
     "7. **Quiz on real mistakes:** After {name} has practiced at least 3 corrections, say out loud it's time for a quiz, then call start_quiz. "
-    "Build every item from mistakes made in this conversation or the trouble spots below, testing the rule behind each one.\n"
+    "Build every item from mistakes made in this conversation, the trouble spots or the saved words below, testing the rule behind each one.\n"
     "8. **Track mood:** Call set_mood on every reply - happy on a correct practice sentence, sad while correcting a mistake, "
     "fear on a 2nd or later failed attempt, love when a fix is finally used correctly, neutral otherwise.\n"
 )
@@ -226,7 +245,7 @@ CORRECTION_RULES = (
 CORRECTION_GUARDRAILS = (
     "\n\n# GUARDRAILS\n"
     "- HARD RULE: NEVER correct or log something you are not confident is really a mistake - natural informal speech and unclear audio are not mistakes.\n"
-    "- HARD RULE: NEVER recite the trouble spot list, or mention logging, set_mood or any other tool.\n"
+    "- HARD RULE: NEVER recite the trouble spot or saved word lists, or mention logging, set_mood or any other tool.\n"
     "- HARD RULE: React only to {name}'s actual words. NEVER invent, simulate, or predict what {name} might say.\n"
     "- HARD RULE: Deliver a single, concise response and immediately hand the turn back to {name}.\n"
     "- HARD RULE: If {name} has not replied, WAIT. NEVER answer your own question.\n"
@@ -250,6 +269,10 @@ def _without_mood_rules(instruction: str) -> str:
 EXAM_HISTORY_HEADER = "\n\n# PREVIOUS SESSIONS\nUse these to pick new themes and to spot repeated errors.\n"
 
 
+def format_saved_words(saved_words: list[dict]) -> str:
+    return "; ".join(f"{w['term']} ({w['meaning']})" if w.get("meaning") else w["term"] for w in saved_words)
+
+
 def build_system_instruction(
     scenario_template: str,
     *,
@@ -261,6 +284,7 @@ def build_system_instruction(
     summary_text: str | None = None,
     review_terms: list[str] | None = None,
     taught_vocab: list[str] | None = None,
+    saved_words: list[dict] | None = None,
     correction_loop: bool = False,
     current_level: str | None = None,
     goal_level: str | None = None,
@@ -315,8 +339,12 @@ def build_system_instruction(
         parts.append(MEMORY_CONTEXT_TEMPLATE.format(name=name, summary=summary_text))
     if taught_vocab:
         parts.append(TAUGHT_VOCAB_CONTEXT_TEMPLATE.format(name=name, terms=", ".join(taught_vocab)))
-    if review_terms:
-        parts.append(SPACED_REPETITION_CONTEXT_TEMPLATE.format(name=name, terms=", ".join(review_terms)))
+    saved_keys = {word["term"].casefold() for word in saved_words or []}
+    trouble_spots = [term for term in review_terms or [] if term.casefold() not in saved_keys]
+    if trouble_spots:
+        parts.append(SPACED_REPETITION_CONTEXT_TEMPLATE.format(name=name, terms=", ".join(trouble_spots)))
+    if saved_words:
+        parts.append(SAVED_WORDS_CONTEXT_TEMPLATE.format(name=name, terms=format_saved_words(saved_words)))
     parts.append(guardrails.format(**fmt_kwargs))
     instruction = "".join(parts)
     if not mood_tool:

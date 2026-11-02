@@ -176,6 +176,8 @@ wordSheetSaveBtn.addEventListener('click', async () => {
     return;
   }
   wordSheetSaveBtn.textContent = 'Saved';
+  // So the tutor can start using it in this lesson, not only the next one.
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'word_saved' }));
 });
 
 async function renderSavedWords() {
