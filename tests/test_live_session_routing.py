@@ -770,13 +770,21 @@ def test_exam_preparation_silences_voice_until_time_up_tells_the_examiner(ws_app
     profile = make_profile(api_key="fake-key")
     conv = make_conversation(profile["id"], target_language="English", scenario="erasmus_exam")
     fake_session = FakeLiveSession(
-        responses=[_response(tool_call=_tool_call(_function_call("exam_timer", {"phase": "preparation"})))]
+        responses=[
+            _response(server_content=_server_content(output_text="Thank you, time is up. Now question two. ")),
+            _response(server_content=_server_content(output_text="You have one minute to prepare. You can take notes.")),
+            _response(server_content=_server_content(turn_complete=True)),
+        ]
     )
     client = ws_app(fake_session)
 
     with client.websocket_connect("/ws/session") as ws:
         _init_exam_session(ws, profile, conv)
+        assert ws.receive_json()["type"] == "transcript_out"
+        assert ws.receive_json()["type"] == "transcript_out"
+        # The last cue in the turn wins: the preparation clock, not a stop.
         assert ws.receive_json() == {"type": "exam_timer", "phase": "preparation", "seconds": 60}
+        assert ws.receive_json() == {"type": "turn_complete"}
 
         ws.send_json({"type": "start_turn"})
         ws.send_json({"type": "turn_complete"})
@@ -784,21 +792,60 @@ def test_exam_preparation_silences_voice_until_time_up_tells_the_examiner(ws_app
         ws.send_json({"type": "start_turn"})
         ws.send_json({"type": "close"})
 
-    assert len(fake_session.sent_tool_responses) == 1
     assert fake_session.sent_client_contents[0]["turns"].parts[0].text == "[Preparation time is over.]"
     assert len(fake_session.sent_realtime_inputs) == 1  # only the turn started after preparation
 
 
-def test_exam_timer_stop_reaches_the_browser_without_seconds(ws_app, make_profile, make_conversation):
+def test_examiner_saying_time_is_up_stops_the_clock_without_seconds(ws_app, make_profile, make_conversation):
     profile = make_profile(api_key="fake-key")
     conv = make_conversation(profile["id"], target_language="English", scenario="erasmus_exam")
-    fake_session = FakeLiveSession(responses=[_response(tool_call=_tool_call(_function_call("exam_timer", {"phase": "stop"})))])
+    fake_session = FakeLiveSession(
+        responses=[
+            _response(server_content=_server_content(output_text="Thank you, I'll stop the clock there.")),
+            _response(server_content=_server_content(turn_complete=True)),
+        ]
+    )
     client = ws_app(fake_session)
 
     with client.websocket_connect("/ws/session") as ws:
         _init_exam_session(ws, profile, conv)
+        assert ws.receive_json()["type"] == "transcript_out"
         assert ws.receive_json() == {"type": "exam_timer", "phase": "stop", "seconds": None}
         ws.send_json({"type": "close"})
+
+
+def test_tutoring_scenarios_never_start_an_exam_clock(ws_app, make_profile, make_conversation):
+    profile = make_profile(api_key="fake-key")
+    conv = make_conversation(profile["id"], target_language="English")
+    fake_session = FakeLiveSession(
+        responses=[
+            _response(server_content=_server_content(output_text="You have one minute to prepare.")),
+            _response(server_content=_server_content(turn_complete=True)),
+        ]
+    )
+    client = ws_app(fake_session)
+
+    with client.websocket_connect("/ws/session") as ws:
+        _init_exam_session(ws, profile, conv)
+        assert ws.receive_json()["type"] == "transcript_out"
+        assert ws.receive_json() == {"type": "turn_complete"}
+        ws.send_json({"type": "close"})
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("text", "phase"),
+    [
+        ("Which one do you prefer? You have one minute to prepare. You can take notes.", "preparation"),
+        ("Your time starts now. You have two minutes.", "answer"),
+        ("Thank you, time is up. That's the end of the speaking exam. Thank you. For question one...", "stop"),
+        ("Thank you,   time is up.\nNow question two. You have 1 minute to prepare.", "preparation"),
+        ("I see. That sounds interesting. Where are you from?", None),
+        ("Try to fill the two minutes next time.", None),
+    ],
+)
+def test_exam_phase_from_examiner_turn(text, phase):
+    assert live_session.exam_phase_from_examiner_turn(text) == phase
 
 
 def test_save_exam_report_tool_call_is_stored_with_its_mistakes(ws_app, make_profile, make_conversation):
@@ -1151,6 +1198,92 @@ def test_mid_response_drop_before_any_reply_still_replays_the_turn(monkeypatch, 
     # The whole point: the turn WAS replayed, since nothing had been said
     # yet for it to duplicate.
     assert len(second_session.sent_realtime_inputs) == 3
+
+
+class _SlowStreamingSession(FakeLiveSession):
+    """Streams its scripted responses one every gap_s seconds, like a long
+    reply arriving in chunks. The watchdog's wait_for cancels receive() on
+    every poll timeout, so progress lives on the session, not the generator:
+    each new receive() picks up where the last one stopped, as the real
+    SDK's does."""
+
+    def __init__(self, responses, gap_s, wait_until):
+        super().__init__(responses=responses, wait_until=wait_until)
+        self._gap_s = gap_s
+        self._next = 0
+        self._due = None
+
+    async def receive(self):
+        while not self._wait_until():
+            await asyncio.sleep(0.01)
+        loop = asyncio.get_running_loop()
+        while self._next < len(self._responses):
+            if self._due is None:
+                self._due = loop.time() + self._gap_s
+            await asyncio.sleep(max(0.0, self._due - loop.time()))
+            response = self._responses[self._next]
+            self._next += 1
+            self._due = None
+            yield response
+        await self._exhausted.wait()
+
+
+def test_a_long_reply_that_keeps_streaming_is_not_treated_as_a_stall(monkeypatch, make_profile, make_conversation):
+    """A reply that streams for longer than STALL_GIVEUP_S must not force a
+    reconnect while chunks keep arriving: that reconnect made the resumed
+    session say the whole exam feedback a second time."""
+    monkeypatch.setattr(live_session, "summarize_conversation", lambda *a, **k: None)
+    monkeypatch.setattr(live_session, "STALL_GIVEUP_S", 0.3)
+    monkeypatch.setattr(live_session, "WAITING_LONG_S", 10.0)
+    monkeypatch.setattr(live_session, "WATCHDOG_POLL_INTERVAL_S", 0.05)
+    profile = make_profile(api_key="fake-key")
+    conv = make_conversation(profile["id"], target_language="Spanish")
+
+    session_ref = {}
+    chunks = [f"part {i} " for i in range(8)]  # 8 x 0.1s = 0.8s, well past the 0.3s limit
+    session = _SlowStreamingSession(
+        responses=[_response(server_content=_server_content(output_text=c)) for c in chunks]
+        + [_response(server_content=_server_content(turn_complete=True))],
+        gap_s=0.1,
+        wait_until=lambda: len(session_ref["s"].sent_realtime_inputs) >= 3,
+    )
+    session_ref["s"] = session
+
+    connect_calls = []
+
+    def _connect(model, config):
+        connect_calls.append(model)
+        return FakeLiveConnectCM(session)
+
+    monkeypatch.setattr(
+        live_session,
+        "get_client_for_key",
+        lambda api_key: SimpleNamespace(aio=SimpleNamespace(live=SimpleNamespace(connect=_connect))),
+    )
+    app = FastAPI()
+    app.include_router(live_session.router)
+    client = TestClient(app)
+
+    with client.websocket_connect("/ws/session") as ws:
+        ws.send_json(
+            {"type": "init", "profile_id": profile["id"], "profile_name": profile["name"], "conversation_id": conv["id"]}
+        )
+        assert ws.receive_json()["type"] == "session_status"
+        ws.send_json({"type": "start_turn"})
+        ws.send_json({"type": "audio_chunk", "data": base64.b64encode(b"\x00\x01" * 50).decode()})
+        ws.send_json({"type": "turn_complete"})
+
+        received = []
+        while True:
+            msg = ws.receive_json()
+            received.append(msg)
+            if msg["type"] == "turn_complete":
+                break
+        ws.send_json({"type": "close"})
+
+    assert [m["text"] for m in received if m["type"] == "transcript_out"] == chunks
+    assert not any(m["type"] in {"error", "session_status"} for m in received)
+    assert len(connect_calls) == 1
 
 
 # --- ResumableSender (transparent session resumption's client-side half -

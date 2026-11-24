@@ -115,29 +115,11 @@ LOG_MISTAKE_TOOL = types.Tool(
     ]
 )
 
-# Only declared for exam scenarios (see scenarios/__init__.py). A Live model has
-# no clock, so the app runs these timers and tells the examiner when one ends.
+# Exam scenarios only (see scenarios/__init__.py). A Live model has no clock,
+# so the app runs these timers, starting them from the examiner's fixed
+# sentences (live_session.exam_phase_from_examiner_turn), and tells the
+# examiner when one ends.
 EXAM_TIMER_SECONDS = {"preparation": 60, "answer": 120}
-
-EXAM_TIMER_TOOL = types.Tool(
-    function_declarations=[
-        types.FunctionDeclaration(
-            name="exam_timer",
-            description=(
-                "Starts or stops the exam clock shown to the candidate.\n"
-                "**Invocation Condition:** Invoke with preparation after telling the candidate to prepare, "
-                "with answer after telling them their time starts, and with stop if they finish early."
-            ),
-            parameters=types.Schema(
-                type="OBJECT",
-                properties={
-                    "phase": types.Schema(type="STRING", enum=[*EXAM_TIMER_SECONDS, "stop"]),
-                },
-                required=["phase"],
-            ),
-        )
-    ]
-)
 
 _EXAM_QUESTION_SCHEMA = types.Schema(
     type="OBJECT",
@@ -165,7 +147,7 @@ SAVE_EXAM_REPORT_TOOL = types.Tool(
             name="save_exam_report",
             description=(
                 "Silently saves the finished mock exam, so later sessions can pick new themes and spot repeated errors.\n"
-                "**Invocation Condition:** Invoke once, right after the spoken feedback."
+                "**Invocation Condition:** Invoke once per mock exam, right after that exam's spoken feedback."
             ),
             parameters=types.Schema(
                 type="OBJECT",

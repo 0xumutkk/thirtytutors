@@ -1,5 +1,6 @@
 // ThirtyTutors - the exam clock (scenarios/erasmus_exam.py). The examiner starts
-// and stops it through its exam_timer tool. It runs here rather than on the
+// and stops it by saying fixed sentences the server listens for (see
+// live_session.exam_phase_from_examiner_turn). It runs here rather than on the
 // server so it carries on across a Live reconnect, and ends by ending the
 // candidate's turn and telling the examiner that time is up.
 

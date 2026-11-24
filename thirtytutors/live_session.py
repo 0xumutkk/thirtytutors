@@ -135,7 +135,6 @@ from .summarization import summarize_conversation
 from .tutor_instructions import SAVED_WORDS_UPDATE_TEMPLATE, build_system_instruction, format_saved_words
 from .tutor_tools import (
     EXAM_TIMER_SECONDS,
-    EXAM_TIMER_TOOL,
     LOG_MISTAKE_TOOL,
     MISTAKE_CATEGORIES,
     MOOD_TOOL,
@@ -192,6 +191,30 @@ _EXAM_TIME_UP_MESSAGES = {
     "preparation": "[Preparation time is over.]",
     "answer": "[The two minutes for this answer are over.]",
 }
+
+
+# The examiner's fixed sentences (scenarios/erasmus_exam.py TIMING) and the
+# clock phase each one calls for. The app reads them from the examiner's own
+# transcript because the Live model almost never called an exam_timer tool in
+# the middle of a spoken turn.
+_EXAM_PHASE_CUES = (
+    ("preparation", re.compile(r"\b(?:one|1) minute to prepare\b")),
+    ("answer", re.compile(r"\byour time starts now\b")),
+    ("stop", re.compile(r"\btime is up\b|\bstop the clock\b|\bend of the speaking exam\b")),
+)
+
+
+def exam_phase_from_examiner_turn(text: str) -> str | None:
+    """The clock phase a finished examiner turn calls for, or None. When one
+    turn holds several cues ('Thank you, time is up. ... You have one minute
+    to prepare.'), the last one said wins."""
+    normalized = " ".join(text.lower().split())
+    last = None
+    for phase, pattern in _EXAM_PHASE_CUES:
+        for match in pattern.finditer(normalized):
+            if last is None or match.start() > last[0]:
+                last = (match.start(), phase)
+    return last[1] if last else None
 
 
 def _exam_history_text(profile_id: str | None) -> str | None:
@@ -353,7 +376,7 @@ def build_config(
     kwargs = {
         "response_modalities": ["AUDIO"],
         "system_instruction": system_instruction,
-        "tools": [EXAM_TIMER_TOOL, SAVE_EXAM_REPORT_TOOL]
+        "tools": [SAVE_EXAM_REPORT_TOOL]
         if exam_mode
         else [
             *([] if auth.is_hosted() else [MOOD_TOOL]),
@@ -1121,6 +1144,7 @@ async def ws_session(websocket: WebSocket):
     # conversation (see the tool_call handling in live_to_browser).
     quiz_state = {"active": False, "quiz_id": None}
     exam_state = {"preparing": False}
+    exam_mode = conv_config.get("scenario") in scenarios.EXAM_SCENARIOS
     if conv is not None:
         in_progress_quiz = quizzes.get_in_progress_quiz(conv["id"])
         if in_progress_quiz is not None:
@@ -1163,6 +1187,8 @@ async def ws_session(websocket: WebSocket):
     # live_to_browser's watchdog (see WAITING_LONG_S/STALL_GIVEUP_S) to
     # distinguish "nothing's happening because it's genuinely idle between
     # turns" from "a turn is outstanding and Gemini has gone silent."
+    # started_at is moved forward on every message from Gemini, so it marks
+    # the start of the current silence, not of the turn.
     # Declared here (not inside the per-connection while loop below) since
     # it needs to survive a reconnect - a turn that was outstanding when
     # the old session died is still outstanding once its buffered audio is
@@ -1189,6 +1215,18 @@ async def ws_session(websocket: WebSocket):
     # error reconnects) - see RAPID_RECONNECT_WINDOW_S/RAPID_RECONNECT_LIMIT.
     last_reconnect_at: float | None = None
     rapid_reconnect_count = 0
+
+    async def run_exam_clock_from_turn():
+        """Starts or stops the exam clock from the examiner turn that just
+        ended (see exam_phase_from_examiner_turn). Must run before
+        flush_turn_buffer_to_memory clears the turn's text."""
+        if not exam_mode:
+            return
+        phase = exam_phase_from_examiner_turn("".join(turn_buffer["tutor"]))
+        if phase is None:
+            return
+        exam_state["preparing"] = phase == "preparation"
+        await websocket.send_json({"type": "exam_timer", "phase": phase, "seconds": EXAM_TIMER_SECONDS.get(phase)})
 
     async def flush_turn_buffer_to_memory(sender=None):
         user_text = "".join(turn_buffer["user"])
@@ -1463,7 +1501,14 @@ async def ws_session(websocket: WebSocket):
                             # Real progress from Gemini - clear any "still
                             # waiting" indicator the watchdog above may have
                             # shown, regardless of what this particular
-                            # response actually contains.
+                            # response actually contains. The watchdog counts
+                            # silence since the last message, not since the
+                            # turn began: a long reply (exam feedback runs
+                            # about two minutes) streams for longer than
+                            # STALL_GIVEUP_S, and timing from the turn's start
+                            # forced a reconnect mid-reply that made the
+                            # resumed session say the whole reply again.
+                            turn_state["started_at"] = time.monotonic()
                             if turn_state["waiting_long_sent"]:
                                 turn_state["waiting_long_sent"] = False
                                 await websocket.send_json({"type": "waiting_long", "active": False})
@@ -1478,6 +1523,7 @@ async def ws_session(websocket: WebSocket):
                             if go_away_pending and sc and getattr(sc, "turn_complete", False):
                                 go_away_pending = False
                                 turn_state["awaiting_response"] = False
+                                await run_exam_clock_from_turn()
                                 await flush_turn_buffer_to_memory(sender)
                                 await websocket.send_json({"type": "turn_complete"})
                                 return "go_away"
@@ -1575,12 +1621,6 @@ async def ws_session(websocket: WebSocket):
                                                 "items": payload.get("items"),
                                             }
                                         )
-                                    elif fc.name == "exam_timer":
-                                        phase = (fc.args or {}).get("phase")
-                                        exam_state["preparing"] = phase == "preparation"
-                                        await websocket.send_json(
-                                            {"type": "exam_timer", "phase": phase, "seconds": EXAM_TIMER_SECONDS.get(phase)}
-                                        )
                                     elif fc.name == "save_exam_report" and conv is not None:
                                         _save_exam_report(profile["id"], conv["id"], dict(fc.args or {}))
                                     elif fc.name == "log_mistake" and conv is not None:
@@ -1638,6 +1678,7 @@ async def ws_session(websocket: WebSocket):
 
                             if sc and getattr(sc, "turn_complete", False):
                                 turn_state["awaiting_response"] = False
+                                await run_exam_clock_from_turn()
                                 await flush_turn_buffer_to_memory(sender)
                                 await websocket.send_json({"type": "turn_complete"})
 

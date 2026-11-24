@@ -306,10 +306,17 @@ def _tool_names(config):
 
 def test_exam_scenario_uses_only_the_exam_tools_and_examiner_rules(isolated_data_dir):
     config = live_session.build_config({"id": "p1", "name": "Ada"}, _exam_conv_config(), "gemini-x")
-    assert _tool_names(config) == {"exam_timer", "save_exam_report"}
+    assert _tool_names(config) == {"save_exam_report"}
     assert "neutral examiner" in config.system_instruction
     assert "log_mistake" not in config.system_instruction
     assert "start_quiz" not in config.system_instruction
+
+
+def test_exam_scenario_allows_several_exams_and_reads_each_question_once(isolated_data_dir):
+    instruction = live_session.build_config({"id": "p1", "name": "Ada"}, _exam_conv_config(), "gemini-x").system_instruction
+    assert "as many mock exams" in instruction
+    assert "Read the question clearly, once." in instruction
+    assert "twice" not in instruction
 
 
 def test_exam_scenario_ignores_lesson_memory(isolated_data_dir):
@@ -355,4 +362,4 @@ def test_saved_exam_report_feeds_the_notes_as_mistakes(isolated_data_dir):
 
 def test_other_scenarios_keep_their_tools(isolated_data_dir):
     config = live_session.build_config({"id": "p1", "name": "Ada"}, _minimal_conv_config(), "gemini-x")
-    assert "exam_timer" not in _tool_names(config)
+    assert "save_exam_report" not in _tool_names(config)
