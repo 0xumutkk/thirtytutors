@@ -266,7 +266,14 @@ def _without_mood_rules(instruction: str) -> str:
         line for line in instruction.splitlines(keepends=True) if "set_mood" not in line or "trouble spot" in line
     ).replace(", set_mood or any other tool", " or any other tool")
 
-EXAM_HISTORY_HEADER = "\n\n# PREVIOUS SESSIONS\nUse these to pick new themes and to spot repeated errors.\n"
+EXAM_HISTORY_HEADER = "\n\n# PREVIOUS SESSIONS\nUse these to spot repeated errors.\n"
+# The app picks the questions (scenarios/erasmus_questions.py): left to
+# choose, the model asked the same few in nearly every session.
+EXAM_QUESTIONS_HEADER = (
+    "\n\n# THIS SESSION'S QUESTIONS\n"
+    "Ask exactly these questions, word for word, in this order: mock exam 1 first, then mock exam 2 if the candidate wants another, and so on. "
+    "Never choose, change or reorder questions yourself.\n"
+)
 
 
 def format_saved_words(saved_words: list[dict]) -> str:
@@ -292,6 +299,7 @@ def build_system_instruction(
     mood_tool: bool = True,
     exam_mode: bool = False,
     exam_history: str | None = None,
+    exam_questions: str | None = None,
 ) -> str:
     """Assembles the full Live API system_instruction string, in the exact
     order Gemini receives it - see this module's docstring for the order,
@@ -311,6 +319,8 @@ def build_system_instruction(
     if exam_mode:
         # A neutral examiner: none of the tutoring rules or lesson memory apply.
         instruction = scenario_template.format(**fmt_kwargs)
+        if exam_questions:
+            instruction += EXAM_QUESTIONS_HEADER + exam_questions
         return instruction + (EXAM_HISTORY_HEADER + exam_history if exam_history else "")
 
     difficulty_instruction = DIFFICULTY_INSTRUCTIONS.get(difficulty, DIFFICULTY_INSTRUCTIONS[DEFAULT_DIFFICULTY])

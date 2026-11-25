@@ -315,8 +315,17 @@ def test_exam_scenario_uses_only_the_exam_tools_and_examiner_rules(isolated_data
 def test_exam_scenario_allows_several_exams_and_reads_each_question_once(isolated_data_dir):
     instruction = live_session.build_config({"id": "p1", "name": "Ada"}, _exam_conv_config(), "gemini-x").system_instruction
     assert "as many mock exams" in instruction
-    assert "Read the question clearly, once." in instruction
+    assert "read the planned question once, word for word" in instruction
     assert "twice" not in instruction
+
+
+def test_exam_instruction_lists_questions_the_app_picked_from_the_bank(isolated_data_dir):
+    from thirtytutors.scenarios import erasmus_questions
+
+    instruction = live_session.build_config({"id": "p9", "name": "Ada"}, _exam_conv_config(), "gemini-x").system_instruction
+    listed = instruction.split("# THIS SESSION'S QUESTIONS", 1)[1]
+    assert "Mock exam 4:" in listed
+    assert sum(q in listed for q in erasmus_questions.ALL_QUESTIONS) == 8
 
 
 def test_exam_scenario_ignores_lesson_memory(isolated_data_dir):

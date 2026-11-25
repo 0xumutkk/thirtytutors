@@ -57,3 +57,35 @@ def test_build_quiz_tool_interpolates_the_given_languages():
     assert "{native_language}" not in item_props["question"].description
     assert "Japanese" in item_props["choices"].description
     assert "{target_language}" not in item_props["choices"].description
+
+
+# --- Erasmus question bank (scenarios/erasmus_questions.py) ---
+
+
+def test_every_bank_question_is_told_apart_by_its_opening_words():
+    from thirtytutors.scenarios import erasmus_questions as eq
+
+    anchors = [" ".join(eq.normalize(q).split()[: eq._ANCHOR_WORDS]) for q in eq.ALL_QUESTIONS]
+    assert len(anchors) == len(set(anchors))
+
+
+def test_picked_exams_skip_recent_questions_and_never_repeat():
+    import random
+
+    from thirtytutors.scenarios import erasmus_questions as eq
+
+    recent = {eq.normalize(q) for q, _ in eq.EVERYDAY[:10]}
+    exams = eq.pick_exam_questions(recent, count=4, rng=random.Random(7))
+    asked = [q for pair in exams for q in pair]
+    assert len(asked) == 8 and len(set(asked)) == 8
+    assert not {eq.normalize(q) for q in asked} & recent
+    first = {q for q, _ in eq.EVERYDAY + eq.PREFERENCE}
+    second = {q for q, _ in eq.OPINION + eq.AGREE}
+    assert all(q1 in first and q2 in second for q1, q2 in exams)
+
+
+def test_questions_read_by_the_examiner_are_found_in_its_transcript():
+    from thirtytutors.scenarios import erasmus_questions as eq
+
+    said = "I see. Question one. What's your favourite season, and why? You have one minute to prepare."
+    assert eq.asked_in(said) == {eq.normalize("What's your favourite season, and why?")}

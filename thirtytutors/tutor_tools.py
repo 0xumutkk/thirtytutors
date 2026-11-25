@@ -124,7 +124,7 @@ EXAM_TIMER_SECONDS = {"preparation": 60, "answer": 120}
 _EXAM_QUESTION_SCHEMA = types.Schema(
     type="OBJECT",
     properties={
-        "type": types.Schema(type="STRING", enum=["A", "B"]),
+        "type": types.Schema(type="STRING", enum=["everyday", "preference", "opinion", "agree_disagree"]),
         "theme": types.Schema(type="STRING"),
         "text": types.Schema(type="STRING"),
     },

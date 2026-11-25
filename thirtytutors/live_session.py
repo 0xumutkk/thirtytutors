@@ -132,6 +132,7 @@ from .constants import (
     get_api_voice_name,
 )
 from .profiles_store import get_client_for_key, get_profile_by_id, patch_profile
+from .scenarios import erasmus_questions
 from .summarization import summarize_conversation
 from .tutor_instructions import SAVED_WORDS_UPDATE_TEMPLATE, build_system_instruction, format_saved_words
 from .tutor_tools import (
@@ -202,16 +203,33 @@ _VOICE_MESSAGE_TYPES = frozenset(
 # spots already use.
 _EXAM_ERROR_CATEGORIES = {"vocab": "word_choice", "pronunciation": "pronunciation", "structure": "word_order"}
 
-_EXAM_TIME_UP_MESSAGES = {
-    "preparation": "[Preparation time is over.]",
-    "answer": "[The two minutes for this answer are over.]",
-}
+def exam_time_up_message(phase: str, question_number: int) -> str | None:
+    """The bracketed turn telling the examiner that a timer ended and exactly
+    what to say next. A bare "[Preparation time is over.]" left the model to
+    work out the step, and it sometimes jumped straight to the feedback."""
+    word = "one" if question_number == 1 else "two"
+    if phase == "preparation":
+        return (
+            f"[Preparation time for question {word} is over. Say only: 'Your time starts now. You have two minutes.' "
+            "Then stop and listen.]"
+        )
+    if phase == "answer" and question_number == 1:
+        return (
+            "[The two minutes for question one are over. Say 'Thank you, time is up.' "
+            "Then read question two and its preparation sentence, and stop.]"
+        )
+    if phase == "answer":
+        return (
+            "[The two minutes for question two are over. Say 'Thank you, time is up. "
+            "That's the end of the speaking exam. Thank you.' Then give the feedback for question one.]"
+        )
+    return None
 
 
 # The examiner's fixed sentences (scenarios/erasmus_exam.py TIMING) and the
 # clock phase each one calls for. The app reads them from the examiner's own
 # transcript because the Live model almost never called an exam_timer tool in
-# the middle of a spoken turn.
+# the middle of a spoken turn. Matched on erasmus_questions.normalize()d text.
 _EXAM_PHASE_CUES = (
     ("preparation", re.compile(r"\b(?:one|1) minute to prepare\b")),
     ("answer", re.compile(r"\byour time starts now\b")),
@@ -219,17 +237,58 @@ _EXAM_PHASE_CUES = (
 )
 
 
-def exam_phase_from_examiner_turn(text: str) -> str | None:
-    """The clock phase a finished examiner turn calls for, or None. When one
-    turn holds several cues ('Thank you, time is up. ... You have one minute
-    to prepare.'), the last one said wins."""
-    normalized = " ".join(text.lower().split())
-    last = None
-    for phase, pattern in _EXAM_PHASE_CUES:
-        for match in pattern.finditer(normalized):
-            if last is None or match.start() > last[0]:
-                last = (match.start(), phase)
-    return last[1] if last else None
+def exam_phase_from_examiner_turn(text: str, next_question: str | None = None) -> tuple[str | None, bool]:
+    """The clock phase a finished examiner turn calls for (or None), and
+    whether the turn read next_question. When one turn holds several cues
+    ('Thank you, time is up. ... You have one minute to prepare.'), the last
+    one said wins. Reading next_question counts as a preparation cue, so the
+    clock still starts when the examiner skips the preparation sentence. Only
+    the next planned question counts, so feedback that restates a question
+    already asked starts nothing."""
+    normalized = erasmus_questions.normalize(text)
+    candidates = [(match.start(), phase) for phase, pattern in _EXAM_PHASE_CUES for match in pattern.finditer(normalized)]
+    position = erasmus_questions.question_position(text, next_question) if next_question else None
+    if position is not None:
+        candidates.append((position, "preparation"))
+    phase = max(candidates)[1] if candidates else None
+    return phase, position is not None
+
+
+# Each profile's planned exam questions for its current session, flattened as
+# question 1, question 2, question 1, ... Picked once per browser session
+# (ws_session) and kept across a Live reconnect, so the questions the system
+# instruction lists don't change halfway through an exam.
+_EXAM_PLANS: dict[str, list[str]] = {}
+
+
+def _recent_exam_questions(profile_id: str) -> set[str]:
+    """The bank questions (normalized) this profile was asked lately, from its
+    saved reports and from what the examiner said in its exam conversations:
+    the model rarely saves a report."""
+    asked = set()
+    for report in memory.get_exam_reports(profile_id, limit=10):
+        asked |= {erasmus_questions.normalize(str(q.get("text"))) for q in report.get("questions") or []}
+    exam_convs = [
+        c for c in memory.list_conversations(profile_id) if (c.get("config") or {}).get("scenario") in scenarios.EXAM_SCENARIOS
+    ]
+    for conv in exam_convs[:5]:
+        tutor_text = " ".join(t["text"] for t in memory.get_turns(conv["id"])[-80:] if t["role"] == "tutor")
+        asked |= erasmus_questions.asked_in(tutor_text)
+    return asked
+
+
+def _new_exam_plan(profile_id: str | None) -> list[str]:
+    recent = _recent_exam_questions(profile_id) if profile_id else set()
+    plan = [q for pair in erasmus_questions.pick_exam_questions(recent) for q in pair]
+    _EXAM_PLANS[profile_id or ""] = plan
+    return plan
+
+
+def _exam_plan_text(plan: list[str]) -> str:
+    lines = []
+    for i in range(0, len(plan), 2):
+        lines.append(f"Mock exam {i // 2 + 1}: question one: {plan[i]} | question two: {plan[i + 1]}")
+    return "\n".join(lines)
 
 
 def _exam_history_text(profile_id: str | None) -> str | None:
@@ -358,6 +417,9 @@ def build_config(
         mood_tool=not auth.is_hosted(),
         exam_mode=exam_mode,
         exam_history=_exam_history_text(profile.get("id")) if exam_mode else None,
+        exam_questions=_exam_plan_text(_EXAM_PLANS.get(profile.get("id") or "") or _new_exam_plan(profile.get("id")))
+        if exam_mode
+        else None,
     )
 
     # Plain (non-transparent) resumption. transparent=True (Google's
@@ -1158,8 +1220,15 @@ async def ws_session(websocket: WebSocket):
     # session, resumed below) or later when the tutor calls start_quiz mid-
     # conversation (see the tool_call handling in live_to_browser).
     quiz_state = {"active": False, "quiz_id": None}
-    exam_state = {"preparing": False}
     exam_mode = conv_config.get("scenario") in scenarios.EXAM_SCENARIOS
+    # "asked" counts the planned questions read so far, which tells the clock
+    # which one is being answered and which one to listen for next.
+    exam_state = {
+        "preparing": False,
+        "phase": None,
+        "asked": 0,
+        "plan": _new_exam_plan(profile.get("id")) if exam_mode else [],
+    }
     # A push-to-talk turn opens on Gemini's side only once the audio holds
     # speech (see PTT_SPEECH_CHUNKS_TO_OPEN). Until then its chunks wait in
     # "preroll" so the first syllable isn't lost.
@@ -1241,9 +1310,16 @@ async def ws_session(websocket: WebSocket):
         flush_turn_buffer_to_memory clears the turn's text."""
         if not exam_mode:
             return
-        phase = exam_phase_from_examiner_turn("".join(turn_buffer["tutor"]))
+        plan, asked = exam_state["plan"], exam_state["asked"]
+        next_question = plan[asked] if asked < len(plan) else None
+        phase, read_next = exam_phase_from_examiner_turn("".join(turn_buffer["tutor"]), next_question)
         if phase is None:
             return
+        # A new question starts here, unless this only repeats the
+        # preparation sentence of the question already being prepared.
+        if phase == "preparation" and (read_next or exam_state["phase"] != "preparation"):
+            exam_state["asked"] += 1
+        exam_state["phase"] = phase
         exam_state["preparing"] = phase == "preparation"
         await websocket.send_json({"type": "exam_timer", "phase": phase, "seconds": EXAM_TIMER_SECONDS.get(phase)})
 
@@ -1484,7 +1560,9 @@ async def ws_session(websocket: WebSocket):
                                 await _tell_tutor_new_saved_words(sender, profile, conv, saved_words_told)
                             elif msg_type == "exam_time_up":
                                 exam_state["preparing"] = False
-                                message = _EXAM_TIME_UP_MESSAGES.get(msg.get("phase"))
+                                exam_state["phase"] = None
+                                question_number = 2 if exam_state["asked"] and exam_state["asked"] % 2 == 0 else 1
+                                message = exam_time_up_message(msg.get("phase"), question_number)
                                 if message:
                                     await sender.send_client_content(
                                         turns=types.Content(role="user", parts=[types.Part(text=message)]),

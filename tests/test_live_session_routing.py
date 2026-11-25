@@ -802,7 +802,8 @@ def test_exam_preparation_silences_voice_until_time_up_tells_the_examiner(ws_app
         ws.send_json({"type": "audio_chunk", "data": speech})
         ws.send_json({"type": "close"})
 
-    assert fake_session.sent_client_contents[0]["turns"].parts[0].text == "[Preparation time is over.]"
+    sent = fake_session.sent_client_contents[0]["turns"].parts[0].text
+    assert sent.startswith("[Preparation time for question one is over. Say only: 'Your time starts now.")
     # Only the turn started after preparation: its activity_start and audio.
     assert len(fake_session.sent_realtime_inputs) == 2
 
@@ -856,7 +857,69 @@ def test_tutoring_scenarios_never_start_an_exam_clock(ws_app, make_profile, make
     ],
 )
 def test_exam_phase_from_examiner_turn(text, phase):
-    assert live_session.exam_phase_from_examiner_turn(text) == phase
+    assert live_session.exam_phase_from_examiner_turn(text) == (phase, False)
+
+
+@pytest.mark.unit
+def test_reading_the_next_planned_question_starts_preparation_without_the_cue():
+    """The examiner sometimes left out 'You have one minute to prepare', and
+    then no clock ran at all."""
+    question = "What are the benefits of experiencing different cultures?"
+    text = "Thank you, time is up. Question two. What are the benefits of experiencing different cultures?"
+    assert live_session.exam_phase_from_examiner_turn(text, question) == ("preparation", True)
+
+
+@pytest.mark.unit
+def test_feedback_that_restates_an_earlier_question_starts_nothing():
+    next_planned = "What was the last meal you cooked, and how did you make it?"
+    text = "For question two, what are the benefits of experiencing different cultures, you gave two reasons."
+    assert live_session.exam_phase_from_examiner_turn(text, next_planned) == (None, False)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("phase", "number", "says"),
+    [
+        ("preparation", 2, "Preparation time for question two is over. Say only: 'Your time starts now."),
+        ("answer", 1, "Then read question two"),
+        ("answer", 2, "That's the end of the speaking exam. Thank you.' Then give the feedback"),
+    ],
+)
+def test_time_up_messages_say_what_comes_next(phase, number, says):
+    assert says in live_session.exam_time_up_message(phase, number)
+
+
+def test_examiner_clock_follows_the_planned_questions_and_numbers_them(ws_app, make_profile, make_conversation, monkeypatch):
+    profile = make_profile(api_key="fake-key")
+    conv = make_conversation(profile["id"], target_language="English", scenario="erasmus_exam")
+    plan = [
+        "What was the last meal you cooked, and how did you make it?",
+        "What are the benefits of experiencing different cultures?",
+        "Describe your hometown.",
+        "Is money the key to happiness or success?",
+    ]
+    monkeypatch.setattr(live_session, "_new_exam_plan", lambda profile_id: plan)
+    fake_session = FakeLiveSession(
+        responses=[
+            _response(server_content=_server_content(output_text=f"Question one. {plan[0]} You have one minute to prepare.")),
+            _response(server_content=_server_content(turn_complete=True)),
+            # Question two read without the preparation sentence.
+            _response(server_content=_server_content(output_text=f"Thank you, time is up. Question two. {plan[1]}")),
+            _response(server_content=_server_content(turn_complete=True)),
+        ]
+    )
+    client = ws_app(fake_session)
+
+    with client.websocket_connect("/ws/session") as ws:
+        _init_exam_session(ws, profile, conv)
+        for _ in range(2):
+            assert ws.receive_json()["type"] == "transcript_out"
+            assert ws.receive_json() == {"type": "exam_timer", "phase": "preparation", "seconds": 60}
+            assert ws.receive_json() == {"type": "turn_complete"}
+        ws.send_json({"type": "exam_time_up", "phase": "preparation"})
+        ws.send_json({"type": "close"})
+
+    assert "question two is over" in fake_session.sent_client_contents[0]["turns"].parts[0].text
 
 
 def test_save_exam_report_tool_call_is_stored_with_its_mistakes(ws_app, make_profile, make_conversation):
