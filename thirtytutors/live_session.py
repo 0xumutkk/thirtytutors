@@ -106,6 +106,7 @@ import base64
 import re
 import time
 import traceback
+from collections import deque
 from datetime import date
 
 import numpy as np
@@ -171,6 +172,20 @@ STALL_GIVEUP_S = 45.0
 # small enough that WAITING_LONG_S/STALL_GIVEUP_S fire close to on time,
 # large enough not to spin needlessly.
 WATCHDOG_POLL_INTERVAL_S = 2.0
+
+# A push-to-talk turn reaches Gemini only once this many of its ~40ms chunks
+# are at speech level (the same per-mic silence threshold hands-free uses). A
+# press with no speech is then never sent: Gemini transcribed such silence as
+# made-up words, often in another language, and answered them. The earlier
+# chunks are held (up to PTT_PREROLL_CHUNKS, about a second) and sent first,
+# so the start of what was said isn't cut off.
+PTT_SPEECH_CHUNKS_TO_OPEN = 3
+PTT_PREROLL_CHUNKS = 25
+
+
+def _pcm_rms(pcm_bytes: bytes) -> float:
+    audio = speech_detection.pcm16_bytes_to_float32(pcm_bytes)
+    return float(np.sqrt(np.mean(audio.astype(np.float64) ** 2))) if len(audio) else 0.0
 
 # Message types that carry voice input - dropped without any response while
 # a quiz is open (quiz_state["active"]) rather than forwarded to Gemini, per
@@ -1145,6 +1160,10 @@ async def ws_session(websocket: WebSocket):
     quiz_state = {"active": False, "quiz_id": None}
     exam_state = {"preparing": False}
     exam_mode = conv_config.get("scenario") in scenarios.EXAM_SCENARIOS
+    # A push-to-talk turn opens on Gemini's side only once the audio holds
+    # speech (see PTT_SPEECH_CHUNKS_TO_OPEN). Until then its chunks wait in
+    # "preroll" so the first syllable isn't lost.
+    ptt_state = {"open": False, "loud_chunks": 0, "preroll": deque(maxlen=PTT_PREROLL_CHUNKS)}
     if conv is not None:
         in_progress_quiz = quizzes.get_in_progress_quiz(conv["id"])
         if in_progress_quiz is not None:
@@ -1349,11 +1368,32 @@ async def ws_session(websocket: WebSocket):
                         try:
                             if msg_type == "start_turn":
                                 sender.clear("push-to-talk")
-                                await sender.send_activity_start()
+                                ptt_state["open"] = False
+                                ptt_state["loud_chunks"] = 0
+                                ptt_state["preroll"].clear()
                             elif msg_type == "audio_chunk":
                                 pcm_bytes = base64.b64decode(msg["data"])
-                                await sender.send_audio(pcm_bytes, "push-to-talk")
+                                if ptt_state["open"]:
+                                    await sender.send_audio(pcm_bytes, "push-to-talk")
+                                    continue
+                                ptt_state["preroll"].append(pcm_bytes)
+                                if _pcm_rms(pcm_bytes) >= hf_silence_threshold:
+                                    ptt_state["loud_chunks"] += 1
+                                if ptt_state["loud_chunks"] >= PTT_SPEECH_CHUNKS_TO_OPEN:
+                                    ptt_state["open"] = True
+                                    await sender.send_activity_start()
+                                    for held in ptt_state["preroll"]:
+                                        await sender.send_audio(held, "push-to-talk")
+                                    ptt_state["preroll"].clear()
                             elif msg_type == "turn_complete":
+                                if not ptt_state["open"]:
+                                    # Nothing was said. Sent on, Gemini would
+                                    # transcribe the silence as words, often in
+                                    # another language, and reply to them.
+                                    ptt_state["preroll"].clear()
+                                    await websocket.send_json({"type": "turn_skipped"})
+                                    continue
+                                ptt_state["open"] = False
                                 await sender.send_activity_end()
                                 turn_state["awaiting_response"] = True
                                 turn_state["started_at"] = time.monotonic()

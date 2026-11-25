@@ -158,6 +158,11 @@ function connectWebSocket() {
       finalizeTurnBubbles();
       talkHint.textContent = idleTalkHint();
       noteConversationActivity();
+    } else if (msg.type === 'turn_skipped') {
+      // A push-to-talk press with no speech - the server never sent it on
+      // (see PTT_SPEECH_CHUNKS_TO_OPEN in live_session.py), so no reply comes.
+      talkHint.textContent = "Didn't hear anything - hold and speak";
+      setTimeout(() => { if (!isRecording && talkHint.textContent.startsWith("Didn't hear")) talkHint.textContent = idleTalkHint(); }, 2500);
     } else if (msg.type === 'exam_timer') {
       runExamTimer(msg.phase, msg.seconds);
     } else if (msg.type === 'mood_change') {

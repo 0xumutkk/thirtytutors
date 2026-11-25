@@ -175,6 +175,13 @@ def _quiz_payload(n_items=2):
     }
 
 
+@pytest.fixture(autouse=True)
+def _open_push_to_talk_on_first_speech_chunk(monkeypatch):
+    """Most tests here send one speech-level chunk per turn. The real
+    threshold (several chunks) has its own tests below."""
+    monkeypatch.setattr(live_session, "PTT_SPEECH_CHUNKS_TO_OPEN", 1)
+
+
 @pytest.fixture
 def ws_app(monkeypatch):
     """Wires a FakeClient (with no scripted responses by default - tests
@@ -234,7 +241,7 @@ def test_normal_turn_flow_routes_messages_and_persists_transcript(ws_app, make_p
         # Drive the push-to-talk side - this is what actually exercises
         # browser_to_live's message routing into send_realtime_input.
         ws.send_json({"type": "start_turn"})
-        audio_b64 = base64.b64encode(b"\x00\x01" * 50).decode()
+        audio_b64 = base64.b64encode(b"\x00\x40" * 50).decode()
         ws.send_json({"type": "audio_chunk", "data": audio_b64})
         ws.send_json({"type": "turn_complete"})
         ws.send_json({"type": "close"})
@@ -742,7 +749,7 @@ def test_voice_input_gated_while_quiz_active(ws_app, make_profile, make_conversa
         ws.receive_json()  # turn_complete
 
         ws.send_json({"type": "start_turn"})
-        audio_b64 = base64.b64encode(b"\x00\x01" * 10).decode()
+        audio_b64 = base64.b64encode(b"\x00\x40" * 10).decode()
         ws.send_json({"type": "audio_chunk", "data": audio_b64})
         ws.send_json({"type": "turn_complete"})
         ws.send_json({"type": "close"})
@@ -786,14 +793,18 @@ def test_exam_preparation_silences_voice_until_time_up_tells_the_examiner(ws_app
         assert ws.receive_json() == {"type": "exam_timer", "phase": "preparation", "seconds": 60}
         assert ws.receive_json() == {"type": "turn_complete"}
 
+        speech = base64.b64encode(b"\x00\x40" * 50).decode()
         ws.send_json({"type": "start_turn"})
+        ws.send_json({"type": "audio_chunk", "data": speech})
         ws.send_json({"type": "turn_complete"})
         ws.send_json({"type": "exam_time_up", "phase": "preparation"})
         ws.send_json({"type": "start_turn"})
+        ws.send_json({"type": "audio_chunk", "data": speech})
         ws.send_json({"type": "close"})
 
     assert fake_session.sent_client_contents[0]["turns"].parts[0].text == "[Preparation time is over.]"
-    assert len(fake_session.sent_realtime_inputs) == 1  # only the turn started after preparation
+    # Only the turn started after preparation: its activity_start and audio.
+    assert len(fake_session.sent_realtime_inputs) == 2
 
 
 def test_examiner_saying_time_is_up_stops_the_clock_without_seconds(ws_app, make_profile, make_conversation):
@@ -1012,7 +1023,7 @@ def test_go_away_replay_excludes_audio_from_a_turn_that_already_completed(monkey
         # this audio stayed in current_turn_chunks forever, well past this
         # turn actually completing.
         ws.send_json({"type": "start_turn"})
-        audio_b64 = base64.b64encode(b"\x00\x01" * 50).decode()
+        audio_b64 = base64.b64encode(b"\x00\x40" * 50).decode()
         for _ in range(4):
             ws.send_json({"type": "audio_chunk", "data": audio_b64})
         ws.send_json({"type": "turn_complete"})
@@ -1102,7 +1113,7 @@ def test_mid_response_drop_discards_buffered_audio_instead_of_replaying(monkeypa
         # wait_until above), the OLD session streams a partial response
         # and then dies mid-stream (raise_after).
         ws.send_json({"type": "start_turn"})
-        audio_b64 = base64.b64encode(b"\x00\x01" * 50).decode()
+        audio_b64 = base64.b64encode(b"\x00\x40" * 50).decode()
         ws.send_json({"type": "audio_chunk", "data": audio_b64})
         ws.send_json({"type": "turn_complete"})
 
@@ -1185,7 +1196,7 @@ def test_mid_response_drop_before_any_reply_still_replays_the_turn(monkeypatch, 
         assert ws.receive_json()["type"] == "session_status"
 
         ws.send_json({"type": "start_turn"})
-        audio_b64 = base64.b64encode(b"\x00\x01" * 50).decode()
+        audio_b64 = base64.b64encode(b"\x00\x40" * 50).decode()
         ws.send_json({"type": "audio_chunk", "data": audio_b64})
         ws.send_json({"type": "turn_complete"})
 
@@ -1270,7 +1281,7 @@ def test_a_long_reply_that_keeps_streaming_is_not_treated_as_a_stall(monkeypatch
         )
         assert ws.receive_json()["type"] == "session_status"
         ws.send_json({"type": "start_turn"})
-        ws.send_json({"type": "audio_chunk", "data": base64.b64encode(b"\x00\x01" * 50).decode()})
+        ws.send_json({"type": "audio_chunk", "data": base64.b64encode(b"\x00\x40" * 50).decode()})
         ws.send_json({"type": "turn_complete"})
 
         received = []
@@ -1284,6 +1295,56 @@ def test_a_long_reply_that_keeps_streaming_is_not_treated_as_a_stall(monkeypatch
     assert [m["text"] for m in received if m["type"] == "transcript_out"] == chunks
     assert not any(m["type"] in {"error", "session_status"} for m in received)
     assert len(connect_calls) == 1
+
+
+_SILENT_CHUNK = base64.b64encode(b"\x00\x00" * 640).decode()
+_SPEECH_CHUNK = base64.b64encode(b"\x00\x40" * 640).decode()
+
+
+def test_a_push_to_talk_press_with_no_speech_never_reaches_gemini(ws_app, make_profile, make_conversation, monkeypatch):
+    """Gemini transcribed silent presses as made-up words, often in another
+    language, and replied to them."""
+    monkeypatch.setattr(live_session, "PTT_SPEECH_CHUNKS_TO_OPEN", 3)
+    profile = make_profile(api_key="fake-key")
+    conv = make_conversation(profile["id"], target_language="English")
+    fake_session = FakeLiveSession()
+    client = ws_app(fake_session)
+
+    with client.websocket_connect("/ws/session") as ws:
+        _init_exam_session(ws, profile, conv)
+        ws.send_json({"type": "start_turn"})
+        for chunk in [_SILENT_CHUNK] * 10 + [_SPEECH_CHUNK] * 2:  # two loud chunks: a click, not speech
+            ws.send_json({"type": "audio_chunk", "data": chunk})
+        ws.send_json({"type": "turn_complete"})
+        assert ws.receive_json() == {"type": "turn_skipped"}
+        ws.send_json({"type": "close"})
+
+    assert fake_session.sent_realtime_inputs == []
+
+
+def test_push_to_talk_opens_on_speech_and_sends_the_held_audio_first(ws_app, make_profile, make_conversation, monkeypatch):
+    monkeypatch.setattr(live_session, "PTT_SPEECH_CHUNKS_TO_OPEN", 3)
+    profile = make_profile(api_key="fake-key")
+    conv = make_conversation(profile["id"], target_language="English")
+    fake_session = FakeLiveSession(
+        responses=[_response(server_content=_server_content(turn_complete=True))],
+        wait_until=lambda: any("activity_end" in sent for sent in fake_session.sent_realtime_inputs),
+    )
+    client = ws_app(fake_session)
+
+    with client.websocket_connect("/ws/session") as ws:
+        _init_exam_session(ws, profile, conv)
+        ws.send_json({"type": "start_turn"})
+        for chunk in [_SILENT_CHUNK] * 2 + [_SPEECH_CHUNK] * 4:
+            ws.send_json({"type": "audio_chunk", "data": chunk})
+        ws.send_json({"type": "turn_complete"})
+        assert ws.receive_json() == {"type": "turn_complete"}
+        ws.send_json({"type": "close"})
+
+    kinds = [next(iter(sent)) for sent in fake_session.sent_realtime_inputs]
+    # activity_start once speech is clear, then every chunk in order (the two
+    # quiet ones and the first speech ones were held, not dropped), then the end.
+    assert kinds == ["activity_start"] + ["audio"] * 6 + ["activity_end"]
 
 
 # --- ResumableSender (transparent session resumption's client-side half -
