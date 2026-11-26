@@ -326,6 +326,17 @@
   font-variant-numeric: tabular-nums;
 }
 #examTimer.ending #examTimerClock { color: var(--accent); }
+#examTimerStop {
+  margin-left: 6px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+#examTimerStop:hover { color: var(--text); border-color: var(--text-muted); }
 
 .word-mark {
   /* An outline, not a border: taking up no space, adding or removing it can't

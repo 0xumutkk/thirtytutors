@@ -7,6 +7,7 @@
 const examTimer = document.getElementById('examTimer');
 const examTimerLabel = document.getElementById('examTimerLabel');
 const examTimerClock = document.getElementById('examTimerClock');
+const examTimerStop = document.getElementById('examTimerStop');
 const EXAM_TIMER_ENDING_SECONDS = 15;
 const EXAM_TIMER_LABELS = { preparation: 'Prepare - take notes', answer: 'Your answer' };
 
@@ -45,3 +46,10 @@ function runExamTimer(phase, seconds) {
     else renderExamClock(secondsLeft);
   }, 250);
 }
+
+// For a clock that started by mistake: it just stops, and the server stops
+// holding back the candidate's voice; the examiner is told nothing.
+examTimerStop.addEventListener('click', () => {
+  stopExamTimer();
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'exam_timer_cancelled' }));
+});

@@ -250,7 +250,15 @@ def exam_phase_from_examiner_turn(text: str, next_question: str | None = None) -
     position = erasmus_questions.question_position(text, next_question) if next_question else None
     if position is not None:
         candidates.append((position, "preparation"))
-    phase = max(candidates)[1] if candidates else None
+    candidates.sort()
+    phase = candidates[-1][1] if candidates else None
+    # "... one minute to prepare. Your time starts now." in one turn: the
+    # examiner ran on without waiting, so the minute still comes first.
+    # exam_time_up_message tells it to start the answer afterwards.
+    if phase == "answer":
+        earlier = [p for _, p in candidates[:-1] if p != "answer"]
+        if earlier and earlier[-1] == "preparation":
+            phase = "preparation"
     return phase, position is not None
 
 
@@ -1227,6 +1235,10 @@ async def ws_session(websocket: WebSocket):
         "preparing": False,
         "phase": None,
         "asked": 0,
+        # Questions whose answer minutes have started, and whether the
+        # current mock exam is over (its feedback is being given).
+        "answered": 0,
+        "finished": False,
         "plan": _new_exam_plan(profile.get("id")) if exam_mode else [],
     }
     # A push-to-talk turn opens on Gemini's side only once the audio holds
@@ -1312,13 +1324,33 @@ async def ws_session(websocket: WebSocket):
             return
         plan, asked = exam_state["plan"], exam_state["asked"]
         next_question = plan[asked] if asked < len(plan) else None
-        phase, read_next = exam_phase_from_examiner_turn("".join(turn_buffer["tutor"]), next_question)
+        text = "".join(turn_buffer["tutor"])
+        phase, read_next = exam_phase_from_examiner_turn(text, next_question)
         if phase is None:
             return
-        # A new question starts here, unless this only repeats the
-        # preparation sentence of the question already being prepared.
-        if phase == "preparation" and (read_next or exam_state["phase"] != "preparation"):
+        if read_next:
+            exam_state["finished"] = False
+        elif phase != "stop":
+            current = plan[asked - 1] if asked else None
+            rereads_current = current is not None and erasmus_questions.question_position(text, current) is not None
+            # Once the exam is over, only the next exam's first question
+            # starts the clock: "go on to question two" during the feedback
+            # once made the examiner read question two again.
+            if exam_state["finished"]:
+                return
+            # A question already answered, or one whose clock already runs.
+            if phase == "answer" and exam_state["answered"] >= asked:
+                return
+            if phase == exam_state["phase"] or (phase == "preparation" and rereads_current):
+                return
+        # A new question starts here (read, or announced by the preparation
+        # sentence alone when the examiner skipped reading it).
+        if phase == "preparation":
             exam_state["asked"] += 1
+        elif phase == "answer":
+            exam_state["answered"] = exam_state["asked"]
+        elif exam_state["asked"] and exam_state["asked"] % 2 == 0 and exam_state["answered"] >= exam_state["asked"]:
+            exam_state["finished"] = True
         exam_state["phase"] = phase
         exam_state["preparing"] = phase == "preparation"
         await websocket.send_json({"type": "exam_timer", "phase": phase, "seconds": EXAM_TIMER_SECONDS.get(phase)})
@@ -1562,12 +1594,19 @@ async def ws_session(websocket: WebSocket):
                                 exam_state["preparing"] = False
                                 exam_state["phase"] = None
                                 question_number = 2 if exam_state["asked"] and exam_state["asked"] % 2 == 0 else 1
+                                if msg.get("phase") == "answer" and question_number == 2:
+                                    exam_state["finished"] = True
                                 message = exam_time_up_message(msg.get("phase"), question_number)
                                 if message:
                                     await sender.send_client_content(
                                         turns=types.Content(role="user", parts=[types.Part(text=message)]),
                                         turn_complete=True,
                                     )
+                            elif msg_type == "exam_timer_cancelled":
+                                # The candidate stopped a clock that should
+                                # not be running; the examiner is told nothing.
+                                exam_state["preparing"] = False
+                                exam_state["phase"] = None
                             elif msg_type == "close":
                                 return
                         except Exception as e:

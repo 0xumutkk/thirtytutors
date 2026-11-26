@@ -922,6 +922,83 @@ def test_examiner_clock_follows_the_planned_questions_and_numbers_them(ws_app, m
     assert "question two is over" in fake_session.sent_client_contents[0]["turns"].parts[0].text
 
 
+@pytest.mark.unit
+def test_a_turn_running_on_from_preparation_into_the_answer_still_starts_preparation():
+    text = "Question two. You have one minute to prepare. You can take notes.\n\nYour time starts now. You have two minutes."
+    assert live_session.exam_phase_from_examiner_turn(text) == ("preparation", False)
+
+
+def test_examiner_rereading_question_two_during_the_feedback_starts_no_clock(
+    ws_app, make_profile, make_conversation, monkeypatch
+):
+    """'Yes, you can pass to question two' after the first half of the
+    feedback once made the examiner read question two again and start its
+    answer clock."""
+    profile = make_profile(api_key="fake-key")
+    conv = make_conversation(profile["id"], target_language="English", scenario="erasmus_exam")
+    plan = [
+        "What's your favourite hobby, and how did you start it?",
+        "How have people's free time habits changed in recent years?",
+        "Describe your hometown.",
+        "Is money the key to happiness or success?",
+    ]
+    monkeypatch.setattr(live_session, "_new_exam_plan", lambda profile_id: plan)
+    turns = [
+        f"Question one. {plan[0]} You have one minute to prepare.",
+        "Your time starts now. You have two minutes.",
+        f"Thank you, time is up. Question two. {plan[1]} You have one minute to prepare.",
+        "Your time starts now. You have two minutes.",
+        "Thank you, time is up. That's the end of the speaking exam. Thank you. Shall I go on to the feedback for question two?",
+        f"Question two. {plan[1]} You have one minute to prepare.\n\nYour time starts now. You have two minutes.",
+        f"Question one. {plan[2]} You have one minute to prepare.",
+    ]
+    responses = []
+    for text in turns:
+        responses.append(_response(server_content=_server_content(output_text=text)))
+        responses.append(_response(server_content=_server_content(turn_complete=True)))
+    client = ws_app(FakeLiveSession(responses=responses))
+
+    timers = []
+    with client.websocket_connect("/ws/session") as ws:
+        _init_exam_session(ws, profile, conv)
+        completed = 0
+        while completed < len(turns):
+            msg = ws.receive_json()
+            if msg["type"] == "exam_timer":
+                timers.append((completed, msg["phase"]))
+            completed += msg["type"] == "turn_complete"
+        ws.send_json({"type": "close"})
+
+    # Turn 5 (the reread) starts nothing; the next exam's question does.
+    assert timers == [(0, "preparation"), (1, "answer"), (2, "preparation"), (3, "answer"), (4, "stop"), (6, "preparation")]
+
+
+def test_stopping_the_clock_by_hand_lets_the_candidate_speak_again(ws_app, make_profile, make_conversation):
+    profile = make_profile(api_key="fake-key")
+    conv = make_conversation(profile["id"], target_language="English", scenario="erasmus_exam")
+    fake_session = FakeLiveSession(
+        responses=[
+            _response(server_content=_server_content(output_text="Question one. You have one minute to prepare.")),
+            _response(server_content=_server_content(turn_complete=True)),
+        ]
+    )
+    client = ws_app(fake_session)
+
+    with client.websocket_connect("/ws/session") as ws:
+        _init_exam_session(ws, profile, conv)
+        assert ws.receive_json()["type"] == "transcript_out"
+        assert ws.receive_json()["phase"] == "preparation"
+        assert ws.receive_json() == {"type": "turn_complete"}
+        ws.send_json({"type": "exam_timer_cancelled"})
+        speech = base64.b64encode(b"\x00\x40" * 50).decode()
+        ws.send_json({"type": "start_turn"})
+        ws.send_json({"type": "audio_chunk", "data": speech})
+        ws.send_json({"type": "close"})
+
+    assert fake_session.sent_client_contents == []
+    assert len(fake_session.sent_realtime_inputs) == 2
+
+
 def test_save_exam_report_tool_call_is_stored_with_its_mistakes(ws_app, make_profile, make_conversation):
     profile = make_profile(api_key="fake-key")
     conv = make_conversation(profile["id"], target_language="English", scenario="erasmus_exam")
